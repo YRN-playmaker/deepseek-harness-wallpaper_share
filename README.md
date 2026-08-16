@@ -25,7 +25,7 @@
 
 ```bash
 # 任选其一：
-dsh plugin --profile web add github:YRN-playmaker/deepseek-harness-wallpaper_share
+dsh plugin --profile web add github:YRN-playmaker/dsh-wallpaper_share
 #   从 GitHub 安装（仓库自带预构建 lib/，不需要构建许可）
 dsh plugin --profile web add we-sync-dsh
 #   从 npm 安装（发布后）
@@ -114,7 +114,7 @@ Sync the wallpaper currently displayed by Wallpaper Engine onto the DeepSeek Har
 
 ```bash
 # Pick one:
-dsh plugin --profile web add github:YRN-playmaker/deepseek-harness-wallpaper_share
+dsh plugin --profile web add github:YRN-playmaker/dsh-wallpaper_share
 #   install from GitHub (the repo ships prebuilt lib/, no build allowance needed)
 dsh plugin --profile web add we-sync-dsh
 #   install from npm (once published)

@@ -32,6 +32,10 @@
     "bundle": "tsdown"
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YRN-playmaker/dsh-wallpaper_share.git"
+  },
   "files": [
     "lib/index.js",
     "lib/client.js",

@@ -5,7 +5,7 @@
 #   .\install.ps1 -Source .\we-sync-dsh-0.1.0.tgz           # 本地 tarball
 # 前置：dsh 已安装；已用 dsh --profile web 启动过至少一次。
 param(
-  [string]$Source = 'github:YRN-playmaker/deepseek-harness-wallpaper_share',
+  [string]$Source = 'github:YRN-playmaker/dsh-wallpaper_share',
   [string]$Profile = 'web',
   [switch]$DryRun
 )
