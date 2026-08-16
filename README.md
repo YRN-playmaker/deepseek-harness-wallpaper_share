@@ -72,11 +72,6 @@ dsh plugin --profile web add ./we-sync-dsh-0.1.0.tgz
 - 多显示器时取 `lastselectedmonitor`（无则第一台）；
 - 视觉参数仅保存在页面内存，刷新回到默认值（72% / 6px / 30%）。
 
-## 提交到 DSH 插件市场（1024Store / awesome-dsh-plugin）
-
-1. 在 GitHub 仓库设置里给本仓库添加 **`dsh-plugin`** topic——市场的自动发现会定时扫描该 topic 的仓库；
-2. 本仓库根目录 `package.json` 已声明 `dsh.bundle.patch`（指向 `cordis.patch.yml`），可通过市场的静态校验，自动收录进「待分类」；
-3. 想要独立分类和策展描述：按市场仓库的 `CONTRIBUTING.md` 提交 PR（新增 `catalog/plugins/` 下的结构化 JSON），或使用市场提供的 `submit-dsh-plugin` Agent Skill 自动生成。
 
 ## 目录
 
