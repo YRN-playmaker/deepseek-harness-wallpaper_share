@@ -1,0 +1,6 @@
+# we-sync bundle layer
+# 由 package.json 的 dsh.bundle.patch 引用；dsh plugin add 安装后自动加入 profile 的 bundle 层。
+# 这一行同时是 host 行（node 半：轮询 + HTTP 路由）与 dsh.client roster 行（浏览器半）。
+- insert:
+    - id: we-sync
+      name: we-sync-dsh

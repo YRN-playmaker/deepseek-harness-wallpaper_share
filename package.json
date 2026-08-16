@@ -17,6 +17,9 @@
     "./package.json": "./package.json"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
@@ -29,19 +32,12 @@
     "bundle": "tsdown"
   },
   "license": "MIT",
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "react": "^18.2.0"
-  },
-  "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@types/react": "~18.3.1",
-    "react": "^18.2.0"
-  },
   "files": [
     "lib/index.js",
     "lib/client.js",
     "lib/client.js.map",
-    "lib/types/**/*.d.ts"
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
   ]
 }

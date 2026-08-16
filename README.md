@@ -19,44 +19,37 @@
 - **同步开关** ⏻ 一键启停
 - 自诊断路由 `/we-sync/diag`（仅本机可访问）
 
-## 安装（三步，无需 checkout、无需构建）
+## 安装（官方 dsh plugin 通道，零手工配置）
 
-> 前置：DSH 已用 `dsh --profile web` 启动过至少一次（会自动创建 `~/.dsh/profiles/web/`）。
+> 前置：DSH 已用 `dsh --profile web` 启动过至少一次。
 
 ```bash
-# ① 安装包到用户 profile 工作区
-cd ~/.dsh/profiles/web && pnpm add https://github.com/YRN-playmaker/deepseek-harness-wallpaper_share
-```
-
-```yaml
-# ② 编辑 ~/.dsh/profiles/web/cordis.patch.yml
-#    默认文件内容是 []，把它替换为：
-- insert:
-    - id: we-sync
-      name: we-sync-dsh
+# 任选其一：
+dsh plugin --profile web add github:YRN-playmaker/deepseek-harness-wallpaper_share
+#   从 GitHub 安装（仓库自带预构建 lib/，不需要构建许可）
+dsh plugin --profile web add we-sync-dsh
+#   从 npm 安装（发布后）
+dsh plugin --profile web add ./we-sync-dsh-0.1.0.tgz
+#   本地 tarball 安装
 ```
 
 ```bash
-# ③ 重启 dsh（web profile），打开页面即可看到 wallpaper_share 标签页
+# 重启 dsh（web profile），打开页面即可看到 wallpaper_share 标签页
 ```
 
-原理：DSH 的 profile 有官方预留的**用户补丁层**（`~/.dsh/profiles/web/cordis.patch.yml`，应用在全部 bundle 层之后）。这一行同时是：
-- **host 行**：在宿主组合中挂载 node 半（轮询 + HTTP 路由）；
-- **`dsh.client` roster 行**：浏览器半的预构建产物（`lib/client.js`）由模块系统自动扫描并注入页面。
-
-包发布时**自带预构建产物**，用户侧零构建。
+**无需手动编辑任何配置文件**：包内 `dsh.bundle.patch` 指向的 `cordis.patch.yml` 会在安装时自动加入 profile 的 bundle 层，其中一行同时是 host 行（node 半：轮询 + HTTP 路由）和 `dsh.client` roster 行（浏览器半的预构建 `lib/client.js` 由模块系统自动注入页面）。包发布时**自带预构建产物**，用户侧零构建。
 
 ## 从源码构建（开发者）
 
-1. 把本仓库 `pkg/` 目录拷入你的 DSH checkout：`packages/client/we-sync/`；
+1. 把本仓库根目录（`package.json`/`src/`/`tsconfig.json`/`tsdown.config.ts`）拷入你的 DSH checkout：`packages/client/we-sync/`；
 2. `pnpm install`
 3. `pnpm --filter we-sync-dsh exec tsc -b`
 4. `pnpm --filter we-sync-dsh bundle`
-5. 产物在 `packages/client/we-sync/lib/`（`index.js` node 半 + `client.js` 浏览器半）。
+5. 产物在 `packages/client/we-sync/lib/`（`index.js` node 半 + `client.js` 浏览器半），拷回本仓库 `lib/` 后 `pnpm pack` 出新 tarball。
 
 ## 配置
 
-包源码 `pkg/src/index.ts` 顶部 `CONFIG`：
+包源码 `src/index.ts` 顶部 `CONFIG`：
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -77,13 +70,22 @@ cd ~/.dsh/profiles/web && pnpm add https://github.com/YRN-playmaker/deepseek-har
 - 多显示器时取 `lastselectedmonitor`（无则第一台）；
 - 视觉参数仅保存在页面内存，刷新回到默认值（72% / 6px / 30%）。
 
+## 提交到 DSH 插件市场（1024Store / awesome-dsh-plugin）
+
+1. 在 GitHub 仓库设置里给本仓库添加 **`dsh-plugin`** topic——市场的自动发现会定时扫描该 topic 的仓库；
+2. 本仓库根目录 `package.json` 已声明 `dsh.bundle.patch`（指向 `cordis.patch.yml`），可通过市场的静态校验，自动收录进「待分类」；
+3. 想要独立分类和策展描述：按市场仓库的 `CONTRIBUTING.md` 提交 PR（新增 `catalog/plugins/` 下的结构化 JSON），或使用市场提供的 `submit-dsh-plugin` Agent Skill 自动生成。
+
 ## 目录
 
-- `pkg/` — 静态插件包源码（node 半 `src/index.ts` + 浏览器半 `src/client/`，含构建配置与预构建产物 `lib/`）
+- `package.json` — 包清单：`dsh.bundle.patch` → `cordis.patch.yml`，`dsh.client` → 浏览器半，`exports["./client"]` → 预构建 `lib/client.js`
+- `cordis.patch.yml` — bundle 补丁层（host 行 + dsh.client roster 行）
+- `src/index.ts` — node 半源码（轮询 / HTTP 路由 / 随机切换）
+- `src/client/` — 浏览器半源码（主题覆盖 / 背景层 / wallpaper_share 面板）
+- `lib/` — 预构建产物（用户零构建；GitHub 安装也无需构建许可）
 - `we-sync-dsh-0.1.0.tgz` — 发布 tarball（GitHub Release 附件）
 - `host.js` / `client.js` — 动态插件形态（DSH 会话内 `cordis_define` 粘贴使用，功能等价）
-- `cordis.patch.example.yml` — 用户补丁层示例
-- `install.ps1` — 可选的一键安装脚本（自动 pnpm add + 写补丁行）
+- `install.ps1` — 可选的一键安装脚本（走官方 `dsh plugin add` 通道）
 
 ## 许可证
 
@@ -106,44 +108,37 @@ Sync the wallpaper currently displayed by Wallpaper Engine onto the DeepSeek Har
 - **Sync toggle** ⏻ one-click on/off
 - Self-diagnostic route `/we-sync/diag` (localhost only)
 
-## Install (3 steps, no checkout, no build)
+## Install (official `dsh plugin` flow, zero manual config)
 
-> Prerequisite: DSH has been started at least once with `dsh --profile web` (it creates `~/.dsh/profiles/web/`).
+> Prerequisite: DSH has been started at least once with `dsh --profile web`.
 
 ```bash
-# ① Install the package into the user profile workspace
-cd ~/.dsh/profiles/web && pnpm add https://github.com/YRN-playmaker/deepseek-harness-wallpaper_share
-```
-
-```yaml
-# ② Edit ~/.dsh/profiles/web/cordis.patch.yml
-#    The default file content is [], replace it with:
-- insert:
-    - id: we-sync
-      name: we-sync-dsh
+# Pick one:
+dsh plugin --profile web add github:YRN-playmaker/deepseek-harness-wallpaper_share
+#   install from GitHub (the repo ships prebuilt lib/, no build allowance needed)
+dsh plugin --profile web add we-sync-dsh
+#   install from npm (once published)
+dsh plugin --profile web add ./we-sync-dsh-0.1.0.tgz
+#   install from the local tarball
 ```
 
 ```bash
-# ③ Restart dsh (web profile) and open the page — the wallpaper_share tab appears
+# Restart dsh (web profile) and open the page — the wallpaper_share tab appears
 ```
 
-How it works: the DSH profile has an official **user patch layer** (`~/.dsh/profiles/web/cordis.patch.yml`, applied after all bundle layers). The single row is both:
-- a **host row**: mounts the node half (polling + HTTP routes) in the host composition;
-- a **`dsh.client` roster row**: the prebuilt browser half (`lib/client.js`) is scanned and injected into the page by the module system.
-
-The published package ships **prebuilt artifacts**, so users never build anything.
+**No config files to edit by hand**: the `cordis.patch.yml` referenced by `dsh.bundle.patch` is added to the profile's bundle layers automatically on install. Its single row is both a host row (node half: polling + HTTP routes) and a `dsh.client` roster row (the prebuilt browser half `lib/client.js` is injected into the page by the module system). The published package ships **prebuilt artifacts**, so users never build anything.
 
 ## Build from source (developers)
 
-1. Copy `pkg/` into your DSH checkout as `packages/client/we-sync/`;
+1. Copy the repo root (`package.json` / `src/` / `tsconfig.json` / `tsdown.config.ts`) into your DSH checkout as `packages/client/we-sync/`;
 2. `pnpm install`
 3. `pnpm --filter we-sync-dsh exec tsc -b`
 4. `pnpm --filter we-sync-dsh bundle`
-5. Artifacts land in `packages/client/we-sync/lib/` (`index.js` node half + `client.js` browser half).
+5. Artifacts land in `packages/client/we-sync/lib/` (`index.js` node half + `client.js` browser half); copy them back to the repo `lib/` and run `pnpm pack` for a new tarball.
 
 ## Configuration
 
-`CONFIG` at the top of `pkg/src/index.ts`:
+`CONFIG` at the top of `src/index.ts`:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -164,13 +159,22 @@ The published package ships **prebuilt artifacts**, so users never build anythin
 - Multi-monitor setups use `lastselectedmonitor` (or the first monitor);
 - Visual settings live in page memory only and reset on refresh (72% / 6px / 30%).
 
+## Submit to the DSH plugin market (1024Store / awesome-dsh-plugin)
+
+1. Add the **`dsh-plugin`** topic to this GitHub repository — the market's automatic discovery scans repos with that topic on a schedule;
+2. The repo's root `package.json` declares `dsh.bundle.patch` (pointing at `cordis.patch.yml`), so it passes the market's static validation and lands in the "uncategorized" section automatically;
+3. For a curated category and description: open a PR following the market repo's `CONTRIBUTING.md` (add a structured JSON under `catalog/plugins/`), or use their `submit-dsh-plugin` Agent Skill to generate it.
+
 ## Contents
 
-- `pkg/` — static plugin package source (node half `src/index.ts` + browser half `src/client/`, build config, prebuilt `lib/`)
+- `package.json` — manifest: `dsh.bundle.patch` → `cordis.patch.yml`, `dsh.client` → browser half, `exports["./client"]` → prebuilt `lib/client.js`
+- `cordis.patch.yml` — the bundle patch layer (host row + dsh.client roster row)
+- `src/index.ts` — node half source (polling / HTTP routes / random switch)
+- `src/client/` — browser half source (theme overrides / background layers / wallpaper_share panel)
+- `lib/` — prebuilt artifacts (zero build for users; GitHub installs need no build allowance)
 - `we-sync-dsh-0.1.0.tgz` — release tarball (attach it to GitHub Releases)
 - `host.js` / `client.js` — dynamic-plugin form (paste into `cordis_define` inside a DSH session; feature-equivalent)
-- `cordis.patch.example.yml` — user patch-layer example
-- `install.ps1` — optional one-shot installer (runs pnpm add + writes the patch row)
+- `install.ps1` — optional one-shot installer (uses the official `dsh plugin add` flow)
 
 ## License
 
