@@ -6,7 +6,7 @@
 
 <a name="中文"></a>
 # 中文
-
+被网友人身攻击，气出来的产物
 把 Wallpaper Engine 当前显示的壁纸实时同步为 DeepSeek Harness Web 界面的背景（磨砂玻璃风格），并支持从页面随机切换壁纸、用滑块调节透明度 / 模糊 / 阴影。
 
 > **无敏感信息**：代码不含 Steam 用户名 / SteamID / 令牌。Wallpaper Engine 安装目录**运行时自动检测**（注册表 `HKCU\Software\WallpaperEngine\installPath` → 常见 Steam 路径），检测不到时才需要手动配置。
