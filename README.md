@@ -17,6 +17,7 @@
 - **纯显示同步**：只读取 WE 状态，不控制 / 不修改桌面壁纸（换壁纸请在 WE 内操作）
 - **多显示器**：自动跟随"最近变化"的一台；复数显示器时可手动锁定某台作为背景来源
 - **视觉效果滑块（即时生效）**：面板透明度 0–100% / 背景模糊 0–30px / 阴影深度 0–100%
+- **专注模式 🎯**：开启后锁定滑块，任务进行中自动切换为 30% / 15px / 90%，任务完成后自动切换为 9% / 6px / 40%
 - **同步开关** ⏻ 一键启停
 - 自诊断路由 `/we-sync/diag`（仅本机可访问）
 
@@ -107,6 +108,7 @@ Sync the wallpaper currently displayed by Wallpaper Engine onto the DeepSeek Har
 - **Display-only**: reads WE state only — never controls or changes your desktop wallpaper (switch wallpapers inside WE)
 - **Multi-monitor**: follows the "most recently changed" monitor automatically; with several monitors you can lock one as the background source
 - **Instant visual sliders**: panel transparency 0–100% / background blur 0–30px / shadow depth 0–100%
+- **Focus mode 🎯**: locks the sliders and auto-switches to 30% / 15px / 90% while a task is running, then to 9% / 6px / 40% when all tasks finish
 - **Sync toggle** ⏻ one-click on/off
 - Self-diagnostic route `/we-sync/diag` (localhost only)
 

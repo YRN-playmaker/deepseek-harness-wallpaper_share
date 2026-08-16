@@ -1,10 +1,10 @@
 /**
- * wallpaper_share 会话视图标签页：当前壁纸信息、同步开关、显示器选择，
- * 以及透明度 / 模糊 / 阴影三个滑块（即时生效）。
+ * wallpaper_share 会话视图标签页：当前壁纸信息、同步开关、显示器选择、
+ * 专注模式，以及透明度 / 模糊 / 阴影三个滑块（即时生效）。
  */
 import { useEffect, useState } from 'react'
 import css from './panel.module.css'
-import { store, type WeSyncInfo } from './index'
+import { store, type WeSyncInfo, FOCUS_WORK, FOCUS_IDLE } from './index'
 
 export function WallpaperSharePanel() {
   const [, force] = useState(0)
@@ -15,6 +15,7 @@ export function WallpaperSharePanel() {
   const [shadow, setShadow] = useState(store.settings.shadow)
   const [status, setStatus] = useState('')
   const [monitor, setMonitor] = useState(store.settings.monitor)
+  const [focus, setFocus] = useState(store.settings.focus)
 
   useEffect(() => store.subscribe(() => {
     setInfo(store.info)
@@ -58,6 +59,15 @@ export function WallpaperSharePanel() {
     store.actions.repoll()
   }
 
+  const onFocus = (): void => {
+    const next = !store.settings.focus
+    store.settings.focus = next
+    setFocus(next)
+    store.actions.applyTheme()
+    store.actions.applyBackground()
+    flash(next ? '专注模式已开启：任务中 30%/15px/90%，空闲 9%/6px/40%' : '专注模式已关闭，恢复手动滑块')
+  }
+
   const wallpaper = info !== null && info.wallpaper !== null ? info.wallpaper : null
   const title = wallpaper === null
     ? (info !== null && info.kind === 'web' ? '当前为网页壁纸（无本地预览）' : 'Wallpaper Engine 尚未应用壁纸')
@@ -67,6 +77,7 @@ export function WallpaperSharePanel() {
     : wallpaper.type + (info !== null && info.kind === 'image' ? ' · 已同步静态预览' : ' · 无静态预览图') + (info !== null && info.monitor !== '' ? ' · 显示器 ' + info.monitor : '')
 
   const monitors = info !== null && Array.isArray(info.monitors) && info.monitors.length > 1 ? info.monitors : null
+  const focusVisuals = focus ? (store.settings.taskActive ? FOCUS_WORK : FOCUS_IDLE) : null
 
   return (
     <div className={css.panel}>
@@ -100,9 +111,16 @@ export function WallpaperSharePanel() {
       </div>
       <div className={css.card}>
         <div className={css.sub}>视觉效果 · 即时生效</div>
-        <Slider label="面板透明度" min={0} max={100} value={alpha} unit="%" onChange={onAlpha} />
-        <Slider label="背景模糊" min={0} max={30} value={blur} unit="px" onChange={onBlur} />
-        <Slider label="阴影深度" min={0} max={100} value={shadow} unit="%" onChange={onShadow} />
+        <div className={css.actions}>
+          <button className={css.btn} onClick={onFocus}>
+            {focus
+              ? (store.settings.taskActive ? '🎯 专注模式 · 任务进行中' : '🎯 专注模式 · 已完成')
+              : '🎯 开启专注模式'}
+          </button>
+        </div>
+        <Slider label="面板透明度" min={0} max={100} value={focusVisuals !== null ? focusVisuals.panelAlpha : alpha} unit="%" disabled={focusVisuals !== null} onChange={onAlpha} />
+        <Slider label="背景模糊" min={0} max={30} value={focusVisuals !== null ? focusVisuals.blur : blur} unit="px" disabled={focusVisuals !== null} onChange={onBlur} />
+        <Slider label="阴影深度" min={0} max={100} value={focusVisuals !== null ? focusVisuals.shadow : shadow} unit="%" disabled={focusVisuals !== null} onChange={onShadow} />
       </div>
     </div>
   )
@@ -114,10 +132,11 @@ function Slider(props: {
   max: number
   value: number
   unit: string
+  disabled?: boolean
   onChange: (v: number) => void
 }) {
   return (
-    <div className={css.row}>
+    <div className={css.row} style={props.disabled === true ? { opacity: 0.45 } : undefined}>
       <label>{props.label}</label>
       <input
         type="range"
@@ -125,6 +144,7 @@ function Slider(props: {
         max={props.max}
         step={1}
         value={props.value}
+        disabled={props.disabled}
         onChange={(e) => props.onChange(Number(e.target.value))}
       />
       <output>{String(props.value) + props.unit}</output>
