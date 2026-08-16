@@ -158,11 +158,6 @@ dsh plugin --profile web add ./we-sync-dsh-0.1.0.tgz
 - Multi-monitor setups use `lastselectedmonitor` (or the first monitor);
 - Visual settings live in page memory only and reset on refresh (72% / 6px / 30%).
 
-## Submit to the DSH plugin market (1024Store / awesome-dsh-plugin)
-
-1. Add the **`dsh-plugin`** topic to this GitHub repository — the market's automatic discovery scans repos with that topic on a schedule;
-2. The repo's root `package.json` declares `dsh.bundle.patch` (pointing at `cordis.patch.yml`), so it passes the market's static validation and lands in the "uncategorized" section automatically;
-3. For a curated category and description: open a PR following the market repo's `CONTRIBUTING.md` (add a structured JSON under `catalog/plugins/`), or use their `submit-dsh-plugin` Agent Skill to generate it.
 
 ## Contents
 
