@@ -1,0 +1,6 @@
+# we-sync 用户补丁层示例
+# 把以下内容写进 ~/.dsh/profiles/web/cordis.patch.yml
+# （如果该文件还是默认的 []，直接用下面内容替换整个文件）
+- insert:
+    - id: we-sync
+      name: we-sync-dsh

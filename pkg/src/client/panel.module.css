@@ -1,0 +1,89 @@
+.panel {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 660px;
+  box-sizing: border-box;
+}
+
+.card {
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1);
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  margin: 0 0 4px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.status {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  margin-top: 10px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.btn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--dsw-alias-bg-overlay);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.row label {
+  flex: 0 0 92px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.row input[type='range'] {
+  flex: 1;
+  accent-color: var(--dsw-alias-brand-primary);
+  height: 20px;
+}
+
+.row output {
+  flex: 0 0 44px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
