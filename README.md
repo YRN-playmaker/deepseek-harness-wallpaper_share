@@ -1,4 +1,5 @@
 # we-sync-dsh · Wallpaper Engine ↔ DeepSeek Harness 壁纸同步
+![Uploading 屏幕截图 2026-08-16 161746.png…]()
 
 [中文](#中文) | [English](#english)
 
