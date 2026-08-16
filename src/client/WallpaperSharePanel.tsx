@@ -15,6 +15,7 @@ export function WallpaperSharePanel() {
   const [shadow, setShadow] = useState(store.settings.shadow)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
+  const [monitor, setMonitor] = useState(store.settings.monitor)
 
   useEffect(() => store.subscribe(() => {
     setInfo(store.info)
@@ -52,6 +53,12 @@ export function WallpaperSharePanel() {
     flash(next ? '已开启壁纸同步' : '已关闭壁纸同步')
   }
 
+  const onMonitor = (v: string): void => {
+    store.settings.monitor = v
+    setMonitor(v)
+    store.actions.repoll()
+  }
+
   const onRandom = async (): Promise<void> => {
     if (busy) return
     setBusy(true)
@@ -73,13 +80,33 @@ export function WallpaperSharePanel() {
     : wallpaper.title
   const subtitle = wallpaper === null
     ? '在 Wallpaper Engine 中应用壁纸后，此处会同步显示'
-    : wallpaper.type + (info !== null && info.kind === 'image' ? ' · 已同步静态预览' : ' · 无静态预览图')
+    : wallpaper.type + (info !== null && info.kind === 'image' ? ' · 已同步静态预览' : ' · 无静态预览图') + (info !== null && info.monitor !== '' ? ' · 显示器 ' + info.monitor : '')
+
+  const monitors = info !== null && Array.isArray(info.monitors) && info.monitors.length > 1 ? info.monitors : null
 
   return (
     <div className={css.panel}>
       <div className={css.card}>
         <div className={css.title}>{title}</div>
         <div className={css.sub}>{subtitle}</div>
+        {monitors !== null
+          ? (
+              <div className={css.row}>
+                <label>背景显示器</label>
+                <select
+                  className={css.select}
+                  value={monitor}
+                  onChange={(e) => onMonitor(e.target.value)}
+                >
+                  <option value="">自动 · 跟随最新变化</option>
+                  {monitors.map((m) => (
+                    <option key={m.key} value={m.key}>{m.key + ' · ' + m.title}</option>
+                  ))}
+                </select>
+                <output>{monitor === '' ? 'auto' : monitor}</output>
+              </div>
+            )
+          : null}
         <div className={css.actions}>
           <button className={css.btn} onClick={() => void onRandom()} disabled={busy}>
             {busy ? '切换中…' : '🎲 随机换一张'}

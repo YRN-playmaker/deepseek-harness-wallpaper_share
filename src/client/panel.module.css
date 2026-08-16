@@ -80,6 +80,17 @@
   height: 20px;
 }
 
+.select {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-family: inherit;
+}
+
 .row output {
   flex: 0 0 44px;
   text-align: right;

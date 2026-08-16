@@ -2,6 +2,8 @@
  * we-sync · node half
  * Wallpaper Engine ↔ DSH 壁纸同步：轮询 WE 的 config.json，通过 HTTP 路由
  * 提供当前壁纸状态与预览图，并支持随机切换（wallpaper64.exe -control）。
+ * 多显示器：跟踪所有显示器条目，默认跟随"最近变化"的一台；客户端可用
+ * ?monitor= 参数锁定某台。
  *
  * 无敏感信息。安装目录运行时自动检测（注册表 → 常见 Steam 路径），
  * 检测不到时在下方 CONFIG.wallpaperEngineDir 手动指定。
@@ -21,6 +23,8 @@ const CONFIG = {
   pollIntervalMs: 2000,
   /** 预览图大小上限（字节） */
   previewMaxBytes: 6291456,
+  /** 随机切换后等待 WE 应用的最长时间（毫秒） */
+  randomVerifyMs: 12000,
 }
 
 interface Req { url?: string; method?: string }
@@ -33,6 +37,10 @@ interface Route { kind: 'exact'; path: string; handler(req: Req, res: Res): void
 interface WebServer { register(route: Route): () => void }
 
 interface WallpaperMeta { title: string; type: string; id: string }
+interface MonitorInfo { key: string; file: string; title: string; type: string }
+interface PreviewInfo { bytes: Uint8Array | null; mime: string; kind: string }
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms) })
 
 export function apply(ctx: Context): void {
   const webServer = ctx.get('webServer') as unknown as WebServer | undefined
@@ -40,12 +48,10 @@ export function apply(ctx: Context): void {
 
   const state = {
     version: 0,
-    fingerprint: 'none',
-    wallpaper: null as WallpaperMeta | null,
-    previewBytes: null as Uint8Array | null,
-    previewMime: '',
-    previewKind: 'none',
-    previewPath: '',
+    snapshot: null as Record<string, { file: string }> | null,
+    latestMonitor: '',
+    monitors: [] as MonitorInfo[],
+    previews: {} as Record<string, PreviewInfo>,
     lastError: '',
     weDir: '',
   }
@@ -108,7 +114,8 @@ export function apply(ctx: Context): void {
     return idx >= 0 ? slash.slice(0, idx) : slash
   }
 
-  function readSelection(weDir: string): { file: string } | null {
+  /** 读取所有显示器的壁纸条目 + 最近选中的显示器 */
+  function readEntries(weDir: string): { entries: Record<string, { file: string }>; last: string } {
     const root = JSON.parse(readText(weDir + '/config.json').replace(/^\uFEFF/, '')) as Record<string, unknown>
     let cfg: Record<string, unknown> | null = null
     for (const key of Object.keys(root)) {
@@ -118,45 +125,46 @@ export function apply(ctx: Context): void {
         break
       }
     }
-    if (cfg === null) return null
-    const general = cfg.general as Record<string, unknown> | undefined
-    if (general === undefined) return null
+    const general = (cfg?.general ?? {}) as Record<string, unknown>
     const wc = (general.wallpaperconfig ?? {}) as Record<string, unknown>
     const sel = (wc.selectedwallpapers ?? {}) as Record<string, unknown>
-    const entries: Array<[string, Record<string, unknown>]> = []
+    const entries: Record<string, { file: string }> = {}
     for (const key of Object.keys(sel)) {
+      if (!key.startsWith('Monitor')) continue
       const value = sel[key]
-      if (key.startsWith('Monitor') && value !== null && typeof value === 'object') entries.push([key, value as Record<string, unknown>])
+      if (value === null || typeof value !== 'object') continue
+      const file = (value as Record<string, unknown>).file
+      if (typeof file === 'string' && file.length > 0) entries[key] = { file }
     }
-    if (entries.length === 0) return null
     const browser = (general.browser ?? {}) as Record<string, unknown>
-    const last = browser.lastselectedmonitor
-    let chosen = entries[0]
-    if (chosen === undefined) return null
-    for (const entry of entries) {
-      if (entry[0] === last) { chosen = entry; break }
-    }
-    const file = chosen[1].file
-    if (typeof file === 'string' && file.length > 0) return { file }
-    return null
+    const last = typeof browser.lastselectedmonitor === 'string' ? browser.lastselectedmonitor : ''
+    return { entries, last }
   }
 
-  function resolveMeta(file: string, weDir: string, workshopDir: string): WallpaperMeta {
+  /** workshopcache 的 workshopid → {title, type} 映射（一次解析，全体复用） */
+  function readCacheMeta(weDir: string): Map<string, { title: string; type: string }> {
+    const map = new Map<string, { title: string; type: string }>()
+    try {
+      const cache = JSON.parse(readText(weDir + '/bin/workshopcache.json')) as {
+        wallpapers?: Array<{ workshopid?: unknown; title?: unknown; type?: unknown }>
+      }
+      for (const w of cache.wallpapers ?? []) {
+        if (w.workshopid !== undefined && w.workshopid !== null) {
+          map.set(String(w.workshopid), { title: String(w.title ?? ''), type: String(w.type ?? '') })
+        }
+      }
+    } catch { /* 缓存不可用 */ }
+    return map
+  }
+
+  function resolveMeta(file: string, workshopDir: string, cacheMap: Map<string, { title: string; type: string }>): WallpaperMeta {
     const slash = normalize(file)
     const match = /431960\/(\d+)/.exec(slash)
     const id = (match !== null ? match[1] : '') ?? ''
     let title = ''
     let type = ''
-    try {
-      const cache = JSON.parse(readText(weDir + '/bin/workshopcache.json')) as {
-        wallpapers?: Array<{ workshopid?: unknown; title?: unknown; type?: unknown; file?: unknown }>
-      }
-      const list = Array.isArray(cache.wallpapers) ? cache.wallpapers : []
-      const hit = id !== ''
-        ? list.find((w) => String(w.workshopid) === id)
-        : list.find((w) => typeof w.file === 'string' && normalize(w.file) === slash)
-      if (hit !== undefined) { title = String(hit.title ?? ''); type = String(hit.type ?? '') }
-    } catch { /* 缓存不可用 */ }
+    const cached = id !== '' ? cacheMap.get(id) : undefined
+    if (cached !== undefined) { title = cached.title; type = cached.type }
     if (title === '') {
       try {
         const base = id !== '' ? workshopDir + '/' + id : dirOf(slash)
@@ -182,64 +190,65 @@ export function apply(ctx: Context): void {
     return null
   }
 
-  function refresh(selection: { file: string } | null, fingerprint: string, weDir: string, workshopDir: string): void {
-    state.fingerprint = fingerprint
+  /** 重建全量显示器信息 + 每台预览缓存；识别"最近变化"的显示器 */
+  function refresh(entries: Record<string, { file: string }>, last: string, weDir: string, workshopDir: string): void {
     state.lastError = ''
-    if (selection === null) {
-      state.wallpaper = null
-      state.previewBytes = null
-      state.previewKind = 'none'
-      state.previewPath = ''
-      state.version += 1
-      return
+    const prev = state.snapshot
+    state.snapshot = entries
+
+    let changedKey: string | null = null
+    for (const key of Object.keys(entries)) {
+      const entry = entries[key]
+      if (entry === undefined) continue
+      const prevEntry = prev === null ? undefined : prev[key]
+      if (prevEntry === undefined || prevEntry.file !== entry.file) { changedKey = key; break }
     }
-    const file = selection.file
-    if (/^https?:\/\//i.test(file)) {
-      state.wallpaper = { title: file, type: 'Web', id: '' }
-      state.previewBytes = null
-      state.previewKind = 'web'
-      state.previewPath = ''
-      state.version += 1
-      return
+    if (changedKey === null && prev !== null) {
+      for (const key of Object.keys(prev)) {
+        if (entries[key] === undefined) { changedKey = key; break }
+      }
     }
-    const meta = resolveMeta(file, weDir, workshopDir)
-    const preview = probePreview(dirOf(file))
-    if (preview === null) {
-      state.wallpaper = meta
-      state.previewBytes = null
-      state.previewKind = 'none'
-      state.previewPath = ''
-      state.version += 1
-      return
+    if (changedKey !== null) state.latestMonitor = changedKey
+    if (state.latestMonitor === '' || entries[state.latestMonitor] === undefined) {
+      state.latestMonitor = entries[last] !== undefined ? last : (Object.keys(entries)[0] ?? '')
     }
-    let bytes: Uint8Array | null = null
-    try {
-      bytes = readBytes(preview.path)
-    } catch (e) {
-      state.lastError = String((e as Error).message ?? e)
+
+    const cacheMap = readCacheMeta(weDir)
+    state.monitors = Object.keys(entries).flatMap((key) => {
+      const entry = entries[key]
+      if (entry === undefined) return []
+      const meta = resolveMeta(entry.file, workshopDir, cacheMap)
+      return [{ key, file: entry.file, title: meta.title, type: meta.type }]
+    })
+
+    // 每台显示器分别解析预览
+    const previews: Record<string, PreviewInfo> = {}
+    for (const monitor of state.monitors) {
+      let info: PreviewInfo = { bytes: null, mime: '', kind: 'none' }
+      if (!/^https?:\/\//i.test(monitor.file)) {
+        const preview = probePreview(dirOf(monitor.file))
+        if (preview !== null) {
+          try {
+            info = { bytes: readBytes(preview.path), mime: preview.mime, kind: 'image' }
+          } catch (e) {
+            state.lastError = String((e as Error).message ?? e)
+          }
+        }
+      } else {
+        info = { bytes: null, mime: '', kind: 'web' }
+      }
+      previews[monitor.key] = info
     }
-    if (bytes === null || bytes.byteLength === 0) {
-      state.wallpaper = meta
-      state.previewBytes = null
-      state.previewKind = 'none'
-      state.previewPath = ''
-      state.version += 1
-      return
-    }
-    state.wallpaper = meta
-    state.previewBytes = bytes
-    state.previewMime = preview.mime
-    state.previewKind = 'image'
-    state.previewPath = preview.path
+    state.previews = previews
     state.version += 1
   }
 
   function poll(weDir: string): void {
     if (weDir === '') return
     try {
-      const selection = readSelection(weDir)
-      const fingerprint = selection === null ? 'none' : JSON.stringify(selection)
-      if (fingerprint !== state.fingerprint) refresh(selection, fingerprint, weDir, resolveWorkshopDir(weDir))
+      const { entries, last } = readEntries(weDir)
+      const fingerprint = JSON.stringify(entries)
+      if (fingerprint !== JSON.stringify(state.snapshot)) refresh(entries, last, weDir, resolveWorkshopDir(weDir))
     } catch (e) {
       state.lastError = String((e as Error).message ?? e)
     }
@@ -252,14 +261,34 @@ export function apply(ctx: Context): void {
     res.end(JSON.stringify(body))
   }
 
+  function monitorFromQuery(req: Req): string {
+    const match = /[?&]monitor=([^&]+)/.exec(req.url ?? '')
+    if (match === null || match[1] === undefined) return ''
+    try { return decodeURIComponent(match[1]) } catch { return '' }
+  }
+
+  function effectiveKey(locked: string): string {
+    const keys = state.monitors.map((m) => m.key)
+    if (keys.includes(locked)) return locked
+    if (state.latestMonitor !== '' && keys.includes(state.latestMonitor)) return state.latestMonitor
+    return keys[0] ?? ''
+  }
+
   disposers.push(webServer.register({
     kind: 'exact',
     path: '/we-sync/state',
-    handler(_req, res) {
+    handler(req, res) {
+      const key = effectiveKey(monitorFromQuery(req))
+      const monitor = state.monitors.find((m) => m.key === key)
+      const preview = key !== '' ? state.previews[key] : undefined
       sendJson(res, {
         version: state.version,
-        kind: state.previewKind,
-        wallpaper: state.wallpaper === null ? null : { title: state.wallpaper.title, type: state.wallpaper.type },
+        kind: preview !== undefined ? preview.kind : 'none',
+        hash: monitor !== undefined ? key + '|' + monitor.file : 'none',
+        monitor: key,
+        latestMonitor: state.latestMonitor,
+        monitors: state.monitors.length > 1 ? state.monitors : [],
+        wallpaper: monitor !== undefined ? { title: monitor.title, type: monitor.type } : null,
       })
     },
   }))
@@ -270,12 +299,11 @@ export function apply(ctx: Context): void {
     handler(_req, res) {
       sendJson(res, {
         version: state.version,
-        kind: state.previewKind,
-        fingerprint: state.fingerprint,
-        previewPath: state.previewPath,
+        latestMonitor: state.latestMonitor,
+        monitorCount: state.monitors.length,
+        monitors: state.monitors.map((m) => ({ key: m.key, file: m.file })),
         lastError: state.lastError,
         weDir: state.weDir,
-        wallpaper: state.wallpaper === null ? null : { title: state.wallpaper.title, type: state.wallpaper.type, id: state.wallpaper.id },
       })
     },
   }))
@@ -283,16 +311,18 @@ export function apply(ctx: Context): void {
   disposers.push(webServer.register({
     kind: 'exact',
     path: '/we-sync/preview',
-    handler(_req, res) {
-      if (state.previewBytes === null) {
+    handler(req, res) {
+      const key = effectiveKey(monitorFromQuery(req))
+      const preview = key !== '' ? state.previews[key] : undefined
+      if (preview === undefined || preview.bytes === null) {
         res.statusCode = 404
         res.end('no preview: ' + state.lastError)
         return
       }
       res.statusCode = 200
-      res.setHeader('Content-Type', state.previewMime)
+      res.setHeader('Content-Type', preview.mime)
       res.setHeader('Cache-Control', 'no-store')
-      res.end(Buffer.from(state.previewBytes))
+      res.end(Buffer.from(preview.bytes))
     },
   }))
 
@@ -300,34 +330,60 @@ export function apply(ctx: Context): void {
     kind: 'exact',
     path: '/we-sync/random',
     handler(_req, res) {
-      if (state.weDir === '') {
-        sendJson(res, { ok: false, error: 'Wallpaper Engine 安装目录未检测到' })
-        return
-      }
-      try {
-        const cache = JSON.parse(readText(state.weDir + '/bin/workshopcache.json')) as { wallpapers?: Array<{ workshopid?: unknown }> }
-        const list = Array.isArray(cache.wallpapers) ? cache.wallpapers : []
-        const ids: string[] = []
-        for (const w of list) {
-          if (w.workshopid !== undefined && w.workshopid !== null) ids.push(String(w.workshopid))
-        }
-        if (ids.length === 0) {
-          sendJson(res, { ok: false, error: '没有可用的已安装壁纸' })
+      void (async () => {
+        if (state.weDir === '') {
+          sendJson(res, { ok: false, error: 'Wallpaper Engine 安装目录未检测到' })
           return
         }
-        const pick = ids[Math.floor(Math.random() * ids.length)]
-        if (pick === undefined) {
-          sendJson(res, { ok: false, error: '没有可用的已安装壁纸' })
-          return
+        try {
+          const cache = JSON.parse(readText(state.weDir + '/bin/workshopcache.json')) as { wallpapers?: Array<{ workshopid?: unknown }> }
+          const list = Array.isArray(cache.wallpapers) ? cache.wallpapers : []
+          const ids: string[] = []
+          for (const w of list) {
+            if (w.workshopid !== undefined && w.workshopid !== null) ids.push(String(w.workshopid))
+          }
+          if (ids.length === 0) {
+            sendJson(res, { ok: false, error: '没有可用的已安装壁纸' })
+            return
+          }
+          const pick = ids[Math.floor(Math.random() * ids.length)]
+          if (pick === undefined) {
+            sendJson(res, { ok: false, error: '没有可用的已安装壁纸' })
+            return
+          }
+          // 启动切换命令；spawn 的异步错误必须监听，否则失败无从感知
+          let spawnError = ''
+          const child = spawn(state.weDir + '/wallpaper64.exe', ['-control', 'openWallpaper', '-workshop', pick], {
+            detached: true, stdio: 'ignore', windowsHide: true,
+          })
+          child.on('error', (err) => { spawnError = String((err as Error).message ?? err) })
+          child.unref()
+          if (spawnError !== '') {
+            sendJson(res, { ok: false, error: '无法启动 wallpaper64.exe：' + spawnError })
+            return
+          }
+          // 验证 WE 真的应用了：轮询 config，等某台显示器出现该 workshop id
+          const needle = '/431960/' + pick + '/'
+          const deadline = Date.now() + CONFIG.randomVerifyMs
+          while (Date.now() < deadline) {
+            await sleep(1000)
+            try {
+              const { entries } = readEntries(state.weDir)
+              for (const key of Object.keys(entries)) {
+                const entry = entries[key]
+                if (entry !== undefined && entry.file.includes(needle)) {
+                  poll(state.weDir)
+                  sendJson(res, { ok: true, workshopId: pick })
+                  return
+                }
+              }
+            } catch { /* WE 写入配置的过程中读取失败是正常的 */ }
+          }
+          sendJson(res, { ok: false, error: 'Wallpaper Engine 未在 ' + Math.round(CONFIG.randomVerifyMs / 1000) + ' 秒内应用该壁纸（可能被忽略或壁纸损坏）' })
+        } catch (e) {
+          sendJson(res, { ok: false, error: String((e as Error).message ?? e) })
         }
-        spawn(state.weDir + '/wallpaper64.exe', ['-control', 'openWallpaper', '-workshop', pick], {
-          detached: true, stdio: 'ignore', windowsHide: true,
-        }).unref()
-        sendJson(res, { ok: true, workshopId: pick })
-        setTimeout(() => poll(state.weDir), 1500)
-      } catch (e) {
-        sendJson(res, { ok: false, error: String((e as Error).message ?? e) })
-      }
+      })()
     },
   }))
 
