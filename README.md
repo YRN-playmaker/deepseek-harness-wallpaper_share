@@ -1,6 +1,7 @@
 # we-sync-dsh · Wallpaper Engine ↔ DeepSeek Harness 壁纸同步
 
 [中文](#中文) | [English](#english)
+<img width="1919" height="1002" alt="屏幕截图 2026-08-16 161746" src="https://github.com/user-attachments/assets/59734301-8ebc-4f9b-8d7a-340b96873733" />
 
 ---
 
