@@ -112,10 +112,10 @@ export function WallpaperSharePanel() {
       <div className={css.card}>
         <div className={css.sub}>视觉效果 · 即时生效</div>
         <div className={css.actions}>
-          <button className={css.btn} onClick={onFocus}>
+          <button className={[css.btn, focus ? css.btnFocusOn : css.btnFocusOff].join(' ')} onClick={onFocus}>
             {focus
-              ? (store.settings.taskActive ? '🎯 专注模式 · 任务进行中' : '🎯 专注模式 · 已完成')
-              : '🎯 开启专注模式'}
+              ? (store.settings.taskActive ? '专注模式 · 任务进行中' : '专注模式 · 已完成')
+              : '开启专注模式'}
           </button>
         </div>
         <Slider label="面板透明度" min={0} max={100} value={focusVisuals !== null ? focusVisuals.panelAlpha : alpha} unit="%" disabled={focusVisuals !== null} onChange={onAlpha} />

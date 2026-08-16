@@ -61,6 +61,26 @@
   cursor: default;
 }
 
+.btnFocusOff {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.55);
+  color: #c4b5fd;
+}
+
+.btnFocusOff:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.32);
+}
+
+.btnFocusOn {
+  background: rgba(46, 160, 67, 0.20);
+  border-color: rgba(46, 160, 67, 0.55);
+  color: #7ee2a8;
+}
+
+.btnFocusOn:hover:not(:disabled) {
+  background: rgba(46, 160, 67, 0.32);
+}
+
 .row {
   display: flex;
   align-items: center;
