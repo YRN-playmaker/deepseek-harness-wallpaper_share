@@ -1,5 +1,5 @@
 /**
- * wallpaper_share 会话视图标签页：当前壁纸信息、随机切换、同步开关，
+ * wallpaper_share 会话视图标签页：当前壁纸信息、同步开关、显示器选择，
  * 以及透明度 / 模糊 / 阴影三个滑块（即时生效）。
  */
 import { useEffect, useState } from 'react'
@@ -13,7 +13,6 @@ export function WallpaperSharePanel() {
   const [alpha, setAlpha] = useState(store.settings.panelAlpha)
   const [blur, setBlur] = useState(store.settings.blur)
   const [shadow, setShadow] = useState(store.settings.shadow)
-  const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [monitor, setMonitor] = useState(store.settings.monitor)
 
@@ -59,21 +58,6 @@ export function WallpaperSharePanel() {
     store.actions.repoll()
   }
 
-  const onRandom = async (): Promise<void> => {
-    if (busy) return
-    setBusy(true)
-    try {
-      const res = await fetch('/we-sync/random', { cache: 'no-store' })
-      const result = await res.json() as { ok?: boolean; error?: string; workshopId?: string }
-      if (result.ok === true) flash('已随机切换壁纸')
-      else flash('切换失败：' + String(result.error ?? '无响应'))
-    } catch {
-      flash('切换失败')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const wallpaper = info !== null && info.wallpaper !== null ? info.wallpaper : null
   const title = wallpaper === null
     ? (info !== null && info.kind === 'web' ? '当前为网页壁纸（无本地预览）' : 'Wallpaper Engine 尚未应用壁纸')
@@ -108,9 +92,6 @@ export function WallpaperSharePanel() {
             )
           : null}
         <div className={css.actions}>
-          <button className={css.btn} onClick={() => void onRandom()} disabled={busy}>
-            {busy ? '切换中…' : '🎲 随机换一张'}
-          </button>
           <button className={css.btn} onClick={onPower}>
             {enabled ? '⏻ 同步开启' : '⏻ 同步关闭'}
           </button>

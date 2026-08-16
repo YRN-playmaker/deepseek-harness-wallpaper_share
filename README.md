@@ -14,7 +14,8 @@
 ## 功能
 
 - **实时同步**：在 Wallpaper Engine 中应用壁纸后，页面背景约 2 秒内自动跟随
-- **双向控制**：`wallpaper_share` 标签页内 🎲 随机换一张（`wallpaper64.exe -control openWallpaper -workshop <id>`）
+- **纯显示同步**：只读取 WE 状态，不控制 / 不修改桌面壁纸（换壁纸请在 WE 内操作）
+- **多显示器**：自动跟随"最近变化"的一台；复数显示器时可手动锁定某台作为背景来源
 - **视觉效果滑块（即时生效）**：面板透明度 0–100% / 背景模糊 0–30px / 阴影深度 0–100%
 - **同步开关** ⏻ 一键启停
 - 自诊断路由 `/we-sync/diag`（仅本机可访问）
@@ -80,7 +81,7 @@ dsh plugin --profile web add ./we-sync-dsh-0.1.0.tgz
 
 - `package.json` — 包清单：`dsh.bundle.patch` → `cordis.patch.yml`，`dsh.client` → 浏览器半，`exports["./client"]` → 预构建 `lib/client.js`
 - `cordis.patch.yml` — bundle 补丁层（host 行 + dsh.client roster 行）
-- `src/index.ts` — node 半源码（轮询 / HTTP 路由 / 随机切换）
+- `src/index.ts` — node 半源码（轮询 / HTTP 路由）
 - `src/client/` — 浏览器半源码（主题覆盖 / 背景层 / wallpaper_share 面板）
 - `lib/` — 预构建产物（用户零构建；GitHub 安装也无需构建许可）
 - `we-sync-dsh-0.1.0.tgz` — 发布 tarball（GitHub Release 附件）
@@ -96,14 +97,15 @@ MIT。
 <a name="english"></a>
 # English
 
-Sync the wallpaper currently displayed by Wallpaper Engine onto the DeepSeek Harness Web UI as a frosted-glass page background, with random wallpaper switching and adjustable transparency / blur / shadow sliders.
+Sync the wallpaper currently displayed by Wallpaper Engine onto the DeepSeek Harness Web UI as a frosted-glass page background (display-only), with monitor selection and adjustable transparency / blur / shadow sliders.
 
 > **No sensitive data**: the code contains no Steam username, SteamID, or tokens. The Wallpaper Engine install directory is **auto-detected at runtime** (registry `HKCU\Software\WallpaperEngine\installPath` → common Steam paths); manual configuration is only a fallback.
 
 ## Features
 
 - **Live sync**: after applying a wallpaper in Wallpaper Engine, the page background follows within ~2 seconds
-- **Two-way control**: 🎲 random wallpaper switch from the `wallpaper_share` tab (`wallpaper64.exe -control openWallpaper -workshop <id>`)
+- **Display-only**: reads WE state only — never controls or changes your desktop wallpaper (switch wallpapers inside WE)
+- **Multi-monitor**: follows the "most recently changed" monitor automatically; with several monitors you can lock one as the background source
 - **Instant visual sliders**: panel transparency 0–100% / background blur 0–30px / shadow depth 0–100%
 - **Sync toggle** ⏻ one-click on/off
 - Self-diagnostic route `/we-sync/diag` (localhost only)
@@ -169,7 +171,7 @@ dsh plugin --profile web add ./we-sync-dsh-0.1.0.tgz
 
 - `package.json` — manifest: `dsh.bundle.patch` → `cordis.patch.yml`, `dsh.client` → browser half, `exports["./client"]` → prebuilt `lib/client.js`
 - `cordis.patch.yml` — the bundle patch layer (host row + dsh.client roster row)
-- `src/index.ts` — node half source (polling / HTTP routes / random switch)
+- `src/index.ts` — node half source (polling / HTTP routes)
 - `src/client/` — browser half source (theme overrides / background layers / wallpaper_share panel)
 - `lib/` — prebuilt artifacts (zero build for users; GitHub installs need no build allowance)
 - `we-sync-dsh-0.1.0.tgz` — release tarball (attach it to GitHub Releases)

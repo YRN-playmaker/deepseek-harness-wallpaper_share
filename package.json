@@ -1,6 +1,6 @@
 {
   "name": "we-sync-dsh",
-  "description": "Wallpaper Engine ↔ DeepSeek Harness wallpaper sync: the page background follows the current Wallpaper Engine wallpaper, with a wallpaper_share conversation-view tab (random switch, power toggle, transparency/blur/shadow sliders)",
+  "description": "Wallpaper Engine ↔ DeepSeek Harness wallpaper sync (display-only): the page background follows the current Wallpaper Engine wallpaper, with a wallpaper_share conversation-view tab (monitor selector, power toggle, transparency/blur/shadow sliders)",
   "version": "0.1.0",
   "type": "module",
   "main": "lib/index.js",

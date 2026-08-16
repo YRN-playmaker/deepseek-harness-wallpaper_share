@@ -1,14 +1,13 @@
 /**
  * we-sync · node half
- * Wallpaper Engine ↔ DSH 壁纸同步：轮询 WE 的 config.json，通过 HTTP 路由
- * 提供当前壁纸状态与预览图，并支持随机切换（wallpaper64.exe -control）。
- * 多显示器：跟踪所有显示器条目，默认跟随"最近变化"的一台；客户端可用
- * ?monitor= 参数锁定某台。
+ * Wallpaper Engine ↔ DSH 壁纸同步（纯显示）：轮询 WE 的 config.json，
+ * 通过 HTTP 路由提供当前壁纸状态与预览图。多显示器：跟踪所有条目，
+ * 默认跟随"最近变化"的一台；客户端可用 ?monitor= 参数锁定某台。
  *
  * 无敏感信息。安装目录运行时自动检测（注册表 → 常见 Steam 路径），
  * 检测不到时在下方 CONFIG.wallpaperEngineDir 手动指定。
  */
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 
@@ -23,8 +22,6 @@ const CONFIG = {
   pollIntervalMs: 2000,
   /** 预览图大小上限（字节） */
   previewMaxBytes: 6291456,
-  /** 随机切换后等待 WE 应用的最长时间（毫秒） */
-  randomVerifyMs: 12000,
 }
 
 interface Req { url?: string; method?: string }
@@ -39,8 +36,6 @@ interface WebServer { register(route: Route): () => void }
 interface WallpaperMeta { title: string; type: string; id: string }
 interface MonitorInfo { key: string; file: string; title: string; type: string }
 interface PreviewInfo { bytes: Uint8Array | null; mime: string; kind: string }
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms) })
 
 export function apply(ctx: Context): void {
   const webServer = ctx.get('webServer') as unknown as WebServer | undefined
@@ -323,67 +318,6 @@ export function apply(ctx: Context): void {
       res.setHeader('Content-Type', preview.mime)
       res.setHeader('Cache-Control', 'no-store')
       res.end(Buffer.from(preview.bytes))
-    },
-  }))
-
-  disposers.push(webServer.register({
-    kind: 'exact',
-    path: '/we-sync/random',
-    handler(_req, res) {
-      void (async () => {
-        if (state.weDir === '') {
-          sendJson(res, { ok: false, error: 'Wallpaper Engine 安装目录未检测到' })
-          return
-        }
-        try {
-          const cache = JSON.parse(readText(state.weDir + '/bin/workshopcache.json')) as { wallpapers?: Array<{ workshopid?: unknown }> }
-          const list = Array.isArray(cache.wallpapers) ? cache.wallpapers : []
-          const ids: string[] = []
-          for (const w of list) {
-            if (w.workshopid !== undefined && w.workshopid !== null) ids.push(String(w.workshopid))
-          }
-          if (ids.length === 0) {
-            sendJson(res, { ok: false, error: '没有可用的已安装壁纸' })
-            return
-          }
-          const pick = ids[Math.floor(Math.random() * ids.length)]
-          if (pick === undefined) {
-            sendJson(res, { ok: false, error: '没有可用的已安装壁纸' })
-            return
-          }
-          // 启动切换命令；spawn 的异步错误必须监听，否则失败无从感知
-          let spawnError = ''
-          const child = spawn(state.weDir + '/wallpaper64.exe', ['-control', 'openWallpaper', '-workshop', pick], {
-            detached: true, stdio: 'ignore', windowsHide: true,
-          })
-          child.on('error', (err) => { spawnError = String((err as Error).message ?? err) })
-          child.unref()
-          if (spawnError !== '') {
-            sendJson(res, { ok: false, error: '无法启动 wallpaper64.exe：' + spawnError })
-            return
-          }
-          // 验证 WE 真的应用了：轮询 config，等某台显示器出现该 workshop id
-          const needle = '/431960/' + pick + '/'
-          const deadline = Date.now() + CONFIG.randomVerifyMs
-          while (Date.now() < deadline) {
-            await sleep(1000)
-            try {
-              const { entries } = readEntries(state.weDir)
-              for (const key of Object.keys(entries)) {
-                const entry = entries[key]
-                if (entry !== undefined && entry.file.includes(needle)) {
-                  poll(state.weDir)
-                  sendJson(res, { ok: true, workshopId: pick })
-                  return
-                }
-              }
-            } catch { /* WE 写入配置的过程中读取失败是正常的 */ }
-          }
-          sendJson(res, { ok: false, error: 'Wallpaper Engine 未在 ' + Math.round(CONFIG.randomVerifyMs / 1000) + ' 秒内应用该壁纸（可能被忽略或壁纸损坏）' })
-        } catch (e) {
-          sendJson(res, { ok: false, error: String((e as Error).message ?? e) })
-        }
-      })()
     },
   }))
 
