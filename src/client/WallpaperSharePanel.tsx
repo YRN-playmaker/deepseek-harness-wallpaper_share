@@ -1,9 +1,9 @@
 /**
  * wallpaper_share 会话视图标签页：当前壁纸信息、同步开关、显示器选择、
- * 专注模式，以及透明度 / 模糊 / 阴影三个滑块（即时生效）。
+ * 专注模式、渲染模式，以及透明度 / 模糊 / 阴影三个滑块（即时生效）。
+ * 样式类名由 PANEL_CSS 在 apply 阶段注入，不依赖 CSS Modules。
  */
 import { useEffect, useState } from 'react'
-import css from './panel.module.css'
 import { store, type WeSyncInfo, FOCUS_WORK, FOCUS_IDLE } from './index'
 
 export function WallpaperSharePanel() {
@@ -16,6 +16,7 @@ export function WallpaperSharePanel() {
   const [status, setStatus] = useState('')
   const [monitor, setMonitor] = useState(store.settings.monitor)
   const [focus, setFocus] = useState(store.settings.focus)
+  const [renderMode, setRenderMode] = useState(store.settings.renderMode)
 
   useEffect(() => store.subscribe(() => {
     setInfo(store.info)
@@ -68,6 +69,21 @@ export function WallpaperSharePanel() {
     flash(next ? '专注模式已开启：任务中 30%/15px/90%，空闲 9%/6px/40%' : '专注模式已关闭，恢复手动滑块')
   }
 
+  const onRenderMode = (): void => {
+    const next: 'preview' | 'source' = store.settings.renderMode === 'source' ? 'preview' : 'source'
+    store.settings.renderMode = next
+    setRenderMode(next)
+    store.actions.applyBackground()
+    if (next === 'source') {
+      const kind = store.info !== null ? store.info.source.kind : ''
+      if (kind === 'video') flash('增强模式：播放壁纸源视频')
+      else if (kind === 'web') flash('增强模式：加载 Web 壁纸页面')
+      else flash('当前壁纸（' + (kind === '' ? '无' : kind) + '）仅支持预览，增强模式自动回退')
+    } else {
+      flash('性能模式：使用静态预览图')
+    }
+  }
+
   const wallpaper = info !== null && info.wallpaper !== null ? info.wallpaper : null
   const title = wallpaper === null
     ? (info !== null && info.kind === 'web' ? '当前为网页壁纸（无本地预览）' : 'Wallpaper Engine 尚未应用壁纸')
@@ -80,16 +96,16 @@ export function WallpaperSharePanel() {
   const focusVisuals = focus ? (store.settings.taskActive ? FOCUS_WORK : FOCUS_IDLE) : null
 
   return (
-    <div className={css.panel}>
-      <div className={css.card}>
-        <div className={css.title}>{title}</div>
-        <div className={css.sub}>{subtitle}</div>
+    <div className="wesync-panel">
+      <div className="wesync-card">
+        <div className="wesync-title">{title}</div>
+        <div className="wesync-sub">{subtitle}</div>
         {monitors !== null
           ? (
-              <div className={css.row}>
+              <div className="wesync-row">
                 <label>背景显示器</label>
                 <select
-                  className={css.select}
+                  className="wesync-select"
                   value={monitor}
                   onChange={(e) => onMonitor(e.target.value)}
                 >
@@ -102,20 +118,23 @@ export function WallpaperSharePanel() {
               </div>
             )
           : null}
-        <div className={css.actions}>
-          <button className={css.btn} onClick={onPower}>
+        <div className="wesync-actions">
+          <button className="wesync-btn" onClick={onPower}>
             {enabled ? '⏻ 同步开启' : '⏻ 同步关闭'}
           </button>
         </div>
-        {status !== '' ? <div className={css.status}>{status}</div> : null}
+        {status !== '' ? <div className="wesync-status">{status}</div> : null}
       </div>
-      <div className={css.card}>
-        <div className={css.sub}>视觉效果 · 即时生效</div>
-        <div className={css.actions}>
-          <button className={[css.btn, focus ? css.btnFocusOn : css.btnFocusOff].join(' ')} onClick={onFocus}>
+      <div className="wesync-card">
+        <div className="wesync-sub">视觉效果 · 即时生效</div>
+        <div className="wesync-actions">
+          <button className={['wesync-btn', focus ? 'wesync-focusOn' : 'wesync-focusOff'].join(' ')} onClick={onFocus}>
             {focus
               ? (store.settings.taskActive ? '专注模式 · 任务进行中' : '专注模式 · 已完成')
               : '开启专注模式'}
+          </button>
+          <button className={['wesync-btn', renderMode === 'source' ? 'wesync-sourceOn' : 'wesync-sourceOff'].join(' ')} onClick={onRenderMode}>
+            {renderMode === 'source' ? '渲染：增强（源文件）' : '渲染：性能（预览）'}
           </button>
         </div>
         <Slider label="面板透明度" min={0} max={100} value={focusVisuals !== null ? focusVisuals.panelAlpha : alpha} unit="%" disabled={focusVisuals !== null} onChange={onAlpha} />
@@ -136,7 +155,7 @@ function Slider(props: {
   onChange: (v: number) => void
 }) {
   return (
-    <div className={css.row} style={props.disabled === true ? { opacity: 0.45 } : undefined}>
+    <div className="wesync-row" style={props.disabled === true ? { opacity: 0.45 } : undefined}>
       <label>{props.label}</label>
       <input
         type="range"

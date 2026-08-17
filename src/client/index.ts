@@ -5,8 +5,8 @@
  * /we-sync/random）通信，不依赖任何 RPC 基础设施。
  * 多显示器：?monitor= 锁定某台；不传则跟随"最近变化"的一台。
  */
-import type { Context } from '@deepseek-ai/cordis'
 import { WallpaperSharePanel } from './WallpaperSharePanel.tsx'
+import { PANEL_CSS } from './panelStyle.ts'
 
 export const inject = ['slots', 'theme']
 
@@ -25,6 +25,8 @@ export interface WeSyncInfo {
   latestMonitor: string
   monitors: WeSyncMonitor[]
   wallpaper: null | { title: string; type: string }
+  /** 当前生效显示器的源文件类型（'video' | 'web' | 'scene' | 'application' | 'image' | 'other' | ''） */
+  source: { kind: string; mime: string }
 }
 
 export interface WeSyncSettings {
@@ -38,6 +40,8 @@ export interface WeSyncSettings {
   focus: boolean
   /** 当前会话是否有任务在进行（由 sessions 列表快照推导） */
   taskActive: boolean
+  /** 渲染模式：'preview' 性能（预览图）| 'source' 增强（壁纸源文件，视频/Web 可用） */
+  renderMode: 'preview' | 'source'
 }
 
 /** 专注模式：任务进行中 */
@@ -54,7 +58,7 @@ export function effectiveVisuals(): { panelAlpha: number; blur: number; shadow: 
 /** 包内单例 store：apply 循环更新，面板组件订阅渲染。 */
 export const store = {
   info: null as WeSyncInfo | null,
-  settings: { enabled: true, panelAlpha: 72, blur: 6, shadow: 30, monitor: '', focus: false, taskActive: false } as WeSyncSettings,
+  settings: { enabled: true, panelAlpha: 72, blur: 6, shadow: 30, monitor: '', focus: false, taskActive: false, renderMode: 'preview' } as WeSyncSettings,
   listeners: new Set<() => void>(),
   actions: {
     applyTheme: (): void => {},
@@ -86,7 +90,13 @@ interface SessionsService {
   }
 }
 
-export function apply(ctx: Context): void {
+/** 最小化的 Cordis 上下文结构（独立构建不依赖 @deepseek-ai/cordis 的类型包） */
+interface CordisCtx {
+  get(name: string): unknown
+  effect(callback: () => (() => void) | void): void
+}
+
+export function apply(ctx: CordisCtx): void {
   const theme = ctx.get('theme') as unknown as ThemeService | undefined
   const slots = ctx.get('slots') as unknown as SlotsService | undefined
   if (theme === undefined || slots === undefined) return
@@ -121,22 +131,90 @@ export function apply(ctx: Context): void {
   styleTag.dataset.plugin = 'we-sync-dsh'
   document.head.appendChild(styleTag)
 
+  const panelStyleTag = document.createElement('style')
+  panelStyleTag.dataset.plugin = 'we-sync-dsh'
+  panelStyleTag.textContent = PANEL_CSS
+  document.head.appendChild(panelStyleTag)
+
+  // 增强模式媒体层：视频或 iframe（性能模式不创建）
+  let mediaEl: HTMLVideoElement | HTMLIFrameElement | null = null
+
+  function setMedia(el: HTMLVideoElement | HTMLIFrameElement | null): void {
+    if (mediaEl !== null && mediaEl !== el) {
+      if (mediaEl instanceof HTMLVideoElement) mediaEl.pause()
+      mediaEl.remove()
+    }
+    mediaEl = el
+    if (el !== null) {
+      el.style.position = 'fixed'
+      el.style.top = '0'
+      el.style.left = '0'
+      el.style.width = '100%'
+      el.style.height = '100%'
+      el.style.zIndex = '-2'
+      el.style.pointerEvents = 'none'
+      el.style.border = '0'
+      document.body.appendChild(el)
+    }
+  }
+
   function applyBackground(): void {
     const info = store.info
     const visuals = effectiveVisuals()
-    const hasImage = store.settings.enabled && info !== null && info.kind === 'image'
-    const monitorQuery = store.settings.monitor !== '' ? '&monitor=' + encodeURIComponent(store.settings.monitor) : ''
-    const img = hasImage ? 'url("/we-sync/preview?v=' + info.version + monitorQuery + '")' : 'none'
+    const enabled = store.settings.enabled
     const blurPx = Math.round(visuals.blur)
     const scale = 1 + blurPx / 400
     const shadowAlpha = (visuals.shadow / 100) * 0.60
+    const monitorKey = info !== null && info.monitor !== '' ? info.monitor : ''
+    const monitorQuery = store.settings.monitor !== '' ? '&monitor=' + encodeURIComponent(store.settings.monitor) : ''
+    const sourceKind = enabled && info !== null && store.settings.renderMode === 'source' ? info.source.kind : ''
+
+    // 预览图（性能模式 / 增强模式下非视频非 Web 时回退）
+    let imgUrl = 'none'
+    if (enabled && info !== null && info.kind === 'image' && sourceKind === '') {
+      imgUrl = 'url("/we-sync/preview?v=' + info.version + monitorQuery + '")'
+    }
+
     styleTag.textContent =
       'html { background-color: #0d0e12; }' +
-      'body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: -2; ' +
-      'background-image: ' + img + '; background-size: cover; background-position: center; background-repeat: no-repeat; ' +
-      'filter: blur(' + blurPx + 'px); transform: scale(' + scale.toFixed(3) + '); transition: filter 0.12s linear; }' +
+      (imgUrl !== 'none'
+        ? 'body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: -2; ' +
+          'background-image: ' + imgUrl + '; background-size: cover; background-position: center; background-repeat: no-repeat; ' +
+          'filter: blur(' + blurPx + 'px); transform: scale(' + scale.toFixed(3) + '); transition: filter 0.12s linear; }'
+        : '') +
       'body::after { content: ""; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: -1; ' +
       'background: linear-gradient(rgba(6,8,12,' + shadowAlpha.toFixed(3) + '), rgba(6,8,12,' + (shadowAlpha * 0.85).toFixed(3) + ')); }'
+
+    if (sourceKind === 'video' && info !== null) {
+      let video = mediaEl instanceof HTMLVideoElement ? mediaEl : null
+      if (video === null) {
+        video = document.createElement('video')
+        video.muted = true
+        video.loop = true
+        video.playsInline = true
+        video.autoplay = true
+        setMedia(video)
+      }
+      const src = '/we-sync/source?monitor=' + encodeURIComponent(monitorKey) + '&v=' + info.version
+      if (video.src !== location.origin + src) video.src = src
+      video.style.filter = 'blur(' + blurPx + 'px)'
+      video.style.transform = 'scale(' + scale.toFixed(3) + ')'
+      video.style.objectFit = 'cover'
+      const p = video.play()
+      if (p !== undefined && p !== null) void p.catch(() => { /* 自动播放被浏览器拦截时静默 */ })
+    } else if (sourceKind === 'web' && info !== null) {
+      let frame = mediaEl instanceof HTMLIFrameElement ? mediaEl : null
+      if (frame === null) {
+        frame = document.createElement('iframe')
+        frame.setAttribute('sandbox', 'allow-scripts')
+        setMedia(frame)
+      }
+      const src = '/we-sync/wallpaper/index.html?monitor=' + encodeURIComponent(monitorKey) + '&v=' + info.version
+      if (frame.src !== location.origin + src) frame.src = src
+      frame.style.filter = 'blur(' + blurPx + 'px)'
+    } else {
+      setMedia(null)
+    }
   }
 
   let polling = false
@@ -163,6 +241,8 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => () => {
     styleTag.remove()
+    panelStyleTag.remove()
+    setMedia(null)
     if (themeDisposer !== null) { themeDisposer(); themeDisposer = null }
   })
 

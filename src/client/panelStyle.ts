@@ -1,4 +1,8 @@
-.panel {
+/**
+ * 面板样式（独立构建不再依赖 CSS Modules，运行时注入 <style>）。
+ */
+export const PANEL_CSS = `
+.wesync-panel {
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -7,14 +11,14 @@
   box-sizing: border-box;
 }
 
-.card {
+.wesync-card {
   padding: 16px 18px;
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l1);
 }
 
-.title {
+.wesync-title {
   font-size: 15px;
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
@@ -24,24 +28,25 @@
   white-space: nowrap;
 }
 
-.sub {
+.wesync-sub {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
 }
 
-.status {
+.wesync-status {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
   margin-top: 10px;
 }
 
-.actions {
+.wesync-actions {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+  flex-wrap: wrap;
 }
 
-.btn {
+.wesync-btn {
   padding: 6px 14px;
   border-radius: 999px;
   border: 1px solid var(--dsw-alias-border-l1);
@@ -52,55 +57,75 @@
   font-family: inherit;
 }
 
-.btn:hover:not(:disabled) {
+.wesync-btn:hover:not(:disabled) {
   background: var(--dsw-alias-bg-overlay);
 }
 
-.btn:disabled {
+.wesync-btn:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-.btnFocusOff {
+.wesync-focusOff {
   background: rgba(139, 92, 246, 0.18);
   border-color: rgba(139, 92, 246, 0.55);
   color: #c4b5fd;
 }
 
-.btnFocusOff:hover:not(:disabled) {
+.wesync-focusOff:hover:not(:disabled) {
   background: rgba(139, 92, 246, 0.32);
 }
 
-.btnFocusOn {
+.wesync-focusOn {
   background: rgba(46, 160, 67, 0.20);
   border-color: rgba(46, 160, 67, 0.55);
   color: #7ee2a8;
 }
 
-.btnFocusOn:hover:not(:disabled) {
+.wesync-focusOn:hover:not(:disabled) {
   background: rgba(46, 160, 67, 0.32);
 }
 
-.row {
+.wesync-sourceOff {
+  background: rgba(249, 115, 22, 0.15);
+  border-color: rgba(249, 115, 22, 0.5);
+  color: #fdba74;
+}
+
+.wesync-sourceOff:hover:not(:disabled) {
+  background: rgba(249, 115, 22, 0.28);
+}
+
+.wesync-sourceOn {
+  background: rgba(46, 160, 67, 0.20);
+  border-color: rgba(46, 160, 67, 0.55);
+  color: #7ee2a8;
+}
+
+.wesync-sourceOn:hover:not(:disabled) {
+  background: rgba(46, 160, 67, 0.32);
+}
+
+.wesync-row {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-top: 12px;
 }
 
-.row label {
+.wesync-row label {
   flex: 0 0 92px;
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
 }
 
-.row input[type='range'] {
+.wesync-row input[type='range'] {
   flex: 1;
   accent-color: var(--dsw-alias-brand-primary);
   height: 20px;
 }
 
-.select {
+.wesync-select {
   flex: 1;
   padding: 4px 8px;
   border-radius: 8px;
@@ -111,10 +136,11 @@
   font-family: inherit;
 }
 
-.row output {
+.wesync-row output {
   flex: 0 0 44px;
   text-align: right;
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
   font-variant-numeric: tabular-nums;
 }
+`
