@@ -7,9 +7,14 @@
  * 无敏感信息。安装目录运行时自动检测（注册表 → 常见 Steam 路径），
  * 检测不到时在下方 CONFIG.wallpaperEngineDir 手动指定。
  */
-import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
-import type { Context } from '@deepseek-ai/cordis'
+import { createReadStream, execFileSync, existsSync, readFileSync, statSync } from 'node:fs'
+import type { Writable } from 'node:stream'
+
+/** 最小化的 Cordis 上下文结构（独立构建不依赖 @deepseek-ai/cordis 的类型包） */
+interface CordisCtx {
+  get(name: string): unknown
+  effect(callback: () => (() => void) | void): void
+}
 
 export const inject = ['webServer']
 
@@ -30,14 +35,14 @@ interface Res {
   setHeader(name: string, value: string): void
   end(body?: unknown): void
 }
-interface Route { kind: 'exact'; path: string; handler(req: Req, res: Res): void | Promise<void> }
+interface Route { kind: 'exact' | 'prefix'; path: string; handler(req: Req, res: Res): void | Promise<void> }
 interface WebServer { register(route: Route): () => void }
 
 interface WallpaperMeta { title: string; type: string; id: string }
-interface MonitorInfo { key: string; file: string; title: string; type: string }
+interface MonitorInfo { key: string; file: string; title: string; type: string; kind: string; mime: string; sourceFile: string }
 interface PreviewInfo { bytes: Uint8Array | null; mime: string; kind: string }
 
-export function apply(ctx: Context): void {
+export function apply(ctx: CordisCtx): void {
   const webServer = ctx.get('webServer') as unknown as WebServer | undefined
   if (webServer === undefined) return
 
@@ -185,6 +190,68 @@ export function apply(ctx: Context): void {
     return null
   }
 
+  /** 按扩展名判断源文件能否被浏览器直接渲染 */
+  function sourceKindOf(file: string): { kind: string; mime: string } {
+    const lower = normalize(file).toLowerCase()
+    if (lower.endsWith('.mp4')) return { kind: 'video', mime: 'video/mp4' }
+    if (lower.endsWith('.webm')) return { kind: 'video', mime: 'video/webm' }
+    if (lower.endsWith('.mov')) return { kind: 'video', mime: 'video/quicktime' }
+    if (lower.endsWith('.avi')) return { kind: 'video', mime: 'video/x-msvideo' }
+    if (lower.endsWith('.mkv')) return { kind: 'video', mime: 'video/x-matroska' }
+    if (lower.endsWith('.html') || lower.endsWith('.htm')) return { kind: 'web', mime: 'text/html' }
+    if (lower.endsWith('.pkg')) return { kind: 'scene', mime: '' }
+    if (lower.endsWith('.exe')) return { kind: 'application', mime: '' }
+    if (lower.endsWith('.png')) return { kind: 'image', mime: 'image/png' }
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return { kind: 'image', mime: 'image/jpeg' }
+    if (lower.endsWith('.gif')) return { kind: 'image', mime: 'image/gif' }
+    if (lower.endsWith('.webp')) return { kind: 'image', mime: 'image/webp' }
+    return { kind: 'other', mime: '' }
+  }
+
+  function mimeOfPath(path: string): string {
+    const lower = normalize(path).toLowerCase()
+    if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'text/html; charset=utf-8'
+    if (lower.endsWith('.css')) return 'text/css; charset=utf-8'
+    if (lower.endsWith('.js')) return 'application/javascript; charset=utf-8'
+    if (lower.endsWith('.json')) return 'application/json; charset=utf-8'
+    if (lower.endsWith('.png')) return 'image/png'
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+    if (lower.endsWith('.gif')) return 'image/gif'
+    if (lower.endsWith('.webp')) return 'image/webp'
+    if (lower.endsWith('.svg')) return 'image/svg+xml'
+    if (lower.endsWith('.woff2')) return 'font/woff2'
+    if (lower.endsWith('.woff')) return 'font/woff'
+    if (lower.endsWith('.ttf')) return 'font/ttf'
+    if (lower.endsWith('.mp4')) return 'video/mp4'
+    if (lower.endsWith('.webm')) return 'video/webm'
+    if (lower.endsWith('.mp3')) return 'audio/mpeg'
+    if (lower.endsWith('.wav')) return 'audio/wav'
+    return 'application/octet-stream'
+  }
+
+  /** 流式返回文件（视频等大文件不能整读进内存） */
+  function serveFile(path: string, mime: string, res: Res): void {
+    let info
+    try {
+      info = statSync(path)
+    } catch {
+      res.statusCode = 404
+      res.end('not found')
+      return
+    }
+    if (!info.isFile()) {
+      res.statusCode = 404
+      res.end('not found')
+      return
+    }
+    res.statusCode = 200
+    res.setHeader('Content-Type', mime)
+    res.setHeader('Cache-Control', 'no-store')
+    const stream = createReadStream(path)
+    stream.on('error', () => { try { res.end() } catch { /* 已关闭 */ } })
+    stream.pipe(res as unknown as Writable)
+  }
+
   /** 重建全量显示器信息 + 每台预览缓存；识别"最近变化"的显示器 */
   function refresh(entries: Record<string, { file: string }>, last: string, weDir: string, workshopDir: string): void {
     state.lastError = ''
@@ -213,7 +280,15 @@ export function apply(ctx: Context): void {
       const entry = entries[key]
       if (entry === undefined) return []
       const meta = resolveMeta(entry.file, workshopDir, cacheMap)
-      return [{ key, file: entry.file, title: meta.title, type: meta.type }]
+      const src = sourceKindOf(entry.file)
+      let kind = src.kind
+      let mime = src.mime
+      let sourceFile = entry.file
+      if (kind === 'other') {
+        const index = dirOf(entry.file) + '/index.html'
+        if (exists(index)) { kind = 'web'; mime = 'text/html'; sourceFile = index }
+      }
+      return [{ key, file: entry.file, title: meta.title, type: meta.type, kind, mime, sourceFile }]
     })
 
     // 每台显示器分别解析预览
@@ -284,7 +359,55 @@ export function apply(ctx: Context): void {
         latestMonitor: state.latestMonitor,
         monitors: state.monitors.length > 1 ? state.monitors : [],
         wallpaper: monitor !== undefined ? { title: monitor.title, type: monitor.type } : null,
+        source: monitor !== undefined ? { kind: monitor.kind, mime: monitor.mime } : { kind: '', mime: '' },
       })
+    },
+  }))
+
+  disposers.push(webServer.register({
+    kind: 'exact',
+    path: '/we-sync/source',
+    handler(req, res) {
+      const key = effectiveKey(monitorFromQuery(req))
+      const monitor = state.monitors.find((m) => m.key === key)
+      if (monitor === undefined) {
+        res.statusCode = 404
+        res.end('no wallpaper')
+        return
+      }
+      if (monitor.kind === 'video' || monitor.kind === 'image') {
+        serveFile(monitor.sourceFile, monitor.mime !== '' ? monitor.mime : 'application/octet-stream', res)
+        return
+      }
+      if (monitor.kind === 'web') {
+        serveFile(monitor.sourceFile, 'text/html; charset=utf-8', res)
+        return
+      }
+      res.statusCode = 415
+      res.end('source not renderable: ' + monitor.kind)
+    },
+  }))
+
+  disposers.push(webServer.register({
+    kind: 'prefix',
+    path: '/we-sync/wallpaper',
+    handler(req, res) {
+      const key = effectiveKey(monitorFromQuery(req))
+      const monitor = state.monitors.find((m) => m.key === key)
+      if (monitor === undefined || monitor.kind !== 'web') {
+        res.statusCode = 404
+        res.end('no web wallpaper')
+        return
+      }
+      const dir = normalize(dirOf(monitor.sourceFile))
+      const rel = (req.url ?? '').split('?')[0].replace(/^\/we-sync\/wallpaper\//, '')
+      const target = normalize(dir + '/' + rel)
+      if (!target.startsWith(dir + '/') || target.length <= dir.length + 1) {
+        res.statusCode = 403
+        res.end('forbidden')
+        return
+      }
+      serveFile(target, mimeOfPath(target), res)
     },
   }))
 

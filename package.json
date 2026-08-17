@@ -1,19 +1,12 @@
 {
   "name": "we-sync-dsh",
-  "description": "Wallpaper Engine ↔ DeepSeek Harness wallpaper sync (display-only): the page background follows the current Wallpaper Engine wallpaper, with a wallpaper_share conversation-view tab (monitor selector, power toggle, transparency/blur/shadow sliders)",
+  "description": "Wallpaper Engine ↔ DeepSeek Harness wallpaper sync (display-only): the page background follows the current Wallpaper Engine wallpaper, with a wallpaper_share conversation-view tab (monitor selector, power toggle, focus mode, render-mode toggle, transparency/blur/shadow sliders)",
   "version": "0.1.0",
   "type": "module",
   "main": "lib/index.js",
-  "types": "lib/types/index.d.ts",
   "exports": {
-    ".": {
-      "types": "./lib/types/index.d.ts",
-      "default": "./lib/index.js"
-    },
-    "./client": {
-      "types": "./lib/types/client/index.d.ts",
-      "default": "./lib/client.js"
-    },
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -29,12 +22,20 @@
     }
   },
   "scripts": {
-    "bundle": "tsdown"
+    "build": "tsdown",
+    "bundle": "tsdown",
+    "typecheck": "tsc --noEmit"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/YRN-playmaker/dsh-wallpaper_share.git"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "~18.3.1",
+    "tsdown": "^0.22.0",
+    "typescript": "^5.6.0"
   },
   "files": [
     "lib/index.js",
