@@ -3,4 +3,4 @@
 # 这一行同时是 host 行（node 半：轮询 + HTTP 路由）与 dsh.client roster 行（浏览器半）。
 - insert:
     - id: we-sync
-      name: we-sync-dsh
+      name: dsh-wallpaper_share

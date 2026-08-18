@@ -10,7 +10,7 @@ const PLATFORM_EXTERNALS = [
 
 export default [
   {
-    name: 'we-sync-dsh',
+    name: 'dsh-wallpaper_share',
     entry: { index: 'src/index.ts' },
     outDir: 'lib',
     format: 'esm',
@@ -25,7 +25,7 @@ export default [
     },
   },
   {
-    name: 'we-sync-dsh/client',
+    name: 'dsh-wallpaper_share/client',
     entry: { client: 'src/client/index.ts' },
     outDir: 'lib',
     format: 'cjs',
@@ -42,7 +42,7 @@ export default [
     },
     outputOptions: {
       entryFileNames: 'client.js',
-      banner: 'window.__ModuleLoader__.load({ id: "we-sync-dsh", factory: (require) => {',
+      banner: 'window.__ModuleLoader__.load({ id: "dsh-wallpaper_share", factory: (require) => {',
       footer: 'return module.exports; } });',
       intro: 'var module = { exports: {} }; var exports = module.exports;',
     },

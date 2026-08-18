@@ -1,8 +1,9 @@
 /**
- * we-sync · node half
+ * dsh-wallpaper_share · node half（内部 id / 路由前缀仍为 we-sync）
  * Wallpaper Engine ↔ DSH 壁纸同步（纯显示）：轮询 WE 的 config.json，
- * 通过 HTTP 路由提供当前壁纸状态与预览图。多显示器：跟踪所有条目，
- * 默认跟随"最近变化"的一台；客户端可用 ?monitor= 参数锁定某台。
+ * 通过 HTTP 路由提供当前壁纸状态、预览图与增强模式源文件。
+ * 多显示器：跟踪所有条目，默认跟随"最近变化"的一台；客户端可用
+ * ?monitor= 参数锁定某台。
  *
  * 无敏感信息。安装目录运行时自动检测（注册表 → 常见 Steam 路径），
  * 检测不到时在下方 CONFIG.wallpaperEngineDir 手动指定。
@@ -30,7 +31,7 @@ const CONFIG = {
   previewMaxBytes: 6291456,
 }
 
-interface Req { url?: string; method?: string }
+interface Req { url?: string; method?: string; headers?: { range?: string } }
 interface Res {
   statusCode: number
   setHeader(name: string, value: string): void
@@ -40,7 +41,8 @@ interface Route { kind: 'exact' | 'prefix'; path: string; handler(req: Req, res:
 interface WebServer { register(route: Route): () => void }
 
 interface WallpaperMeta { title: string; type: string; id: string }
-interface MonitorInfo { key: string; file: string; title: string; type: string; kind: string; mime: string; sourceFile: string }
+interface SceneImage { start: number; end: number; mime: string; width: number; height: number }
+interface MonitorInfo { key: string; file: string; title: string; type: string; kind: string; mime: string; sourceFile: string; sceneImage: SceneImage | null }
 interface PreviewInfo { bytes: Uint8Array | null; mime: string; kind: string }
 
 export function apply(ctx: CordisCtx): void {
@@ -209,6 +211,64 @@ export function apply(ctx: CordisCtx): void {
     return { kind: 'other', mime: '' }
   }
 
+  /** 从 scene.pkg（Wallpaper Engine 私有 PKGV 容器）中扫描最大的一张 JPEG/PNG 纹理。
+   *  scene 壁纸的真实画面由 WE 引擎（shader / 粒子 / 纹理）渲染，浏览器无法执行；
+   *  这里提取内嵌背景纹理的 mipmap 链中最高清的一张，作为增强模式的近似背景。 */
+  function scanPkgImage(file: string): SceneImage | null {
+    let buf: Buffer
+    try {
+      buf = readFileSync(file)
+    } catch { return null }
+    let best: SceneImage | null = null
+    const consider = (start: number, end: number, mime: string, w: number, h: number): void => {
+      if (w < 64 || h < 64 || w > 16384 || h > 16384) return
+      const area = w * h
+      if (best === null || area > best.width * best.height) best = { start, end, mime, width: w, height: h }
+    }
+    let pos = 0
+    while (pos < buf.length - 4) {
+      // JPEG SOI（FF D8 FF）
+      if (buf[pos] === 0xff && buf[pos + 1] === 0xd8 && buf[pos + 2] === 0xff) {
+        let scan = pos + 2
+        let w = 0
+        let h = 0
+        for (let guard = 0; scan < buf.length - 9 && guard < 64; guard++) {
+          if (buf[scan] !== 0xff) { scan++; continue }
+          const marker = buf[scan + 1]
+          if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7)) { scan += 2; continue }
+          const len = buf.readUInt16BE(scan + 2)
+          if (len < 2) break
+          // SOF0–SOF15（排除 DHT/JPG/DAC）
+          if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+            h = buf.readUInt16BE(scan + 5)
+            w = buf.readUInt16BE(scan + 7)
+            break
+          }
+          scan += 2 + len
+        }
+        if (w > 0 && h > 0) {
+          const eoi = buf.indexOf(Buffer.from([0xff, 0xd9]), scan)
+          const end = eoi >= 0 ? eoi + 1 : buf.length - 1
+          consider(pos, end, 'image/jpeg', w, h)
+          pos = end
+          continue
+        }
+      }
+      // PNG 签名（89 50 4E 47 0D 0A 1A 0A）+ IHDR
+      if (buf[pos] === 0x89 && buf[pos + 1] === 0x50 && buf[pos + 2] === 0x4e && buf[pos + 3] === 0x47 && buf.readUInt32BE(pos + 12) === 0x49484452) {
+        const w = buf.readUInt32BE(pos + 16)
+        const h = buf.readUInt32BE(pos + 20)
+        const iend = buf.indexOf(Buffer.from('49454e44ae426082', 'hex'), pos)
+        const end = iend >= 0 ? iend + 7 : buf.length - 1
+        consider(pos, end, 'image/png', w, h)
+        pos = end
+        continue
+      }
+      pos++
+    }
+    return best
+  }
+
   function mimeOfPath(path: string): string {
     const lower = normalize(path).toLowerCase()
     if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'text/html; charset=utf-8'
@@ -230,8 +290,32 @@ export function apply(ctx: CordisCtx): void {
     return 'application/octet-stream'
   }
 
-  /** 流式返回文件（视频等大文件不能整读进内存） */
-  function serveFile(path: string, mime: string, res: Res): void {
+  /** 解析 HTTP Range 头；返回 undefined=无 Range，null=非法范围，否则为闭区间 */
+  function parseRange(header: string | undefined, total: number): { start: number; end: number } | null | undefined {
+    if (typeof header !== 'string') return undefined
+    const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+    if (m === null) return undefined
+    const left = m[1] ?? ''
+    const right = m[2] ?? ''
+    if (left === '' && right === '') return null
+    let start: number
+    let end: number
+    if (left === '') {
+      const n = Number(right)
+      if (!Number.isFinite(n) || n <= 0) return null
+      start = Math.max(0, total - n)
+      end = total - 1
+    } else {
+      start = Number(left)
+      if (!Number.isFinite(start) || start < 0 || start >= total) return null
+      end = right === '' ? total - 1 : Math.min(Number(right), total - 1)
+      if (!Number.isFinite(end) || end < start) return null
+    }
+    return { start, end }
+  }
+
+  /** 流式返回文件（视频等大文件不能整读进内存），支持 HTTP Range 以便视频可 seek/播放 */
+  function serveFile(path: string, mime: string, req: Req, res: Res): void {
     let info
     try {
       info = statSync(path)
@@ -245,10 +329,58 @@ export function apply(ctx: CordisCtx): void {
       res.end('not found')
       return
     }
-    res.statusCode = 200
+    const total = info.size
+    res.setHeader('Accept-Ranges', 'bytes')
     res.setHeader('Content-Type', mime)
     res.setHeader('Cache-Control', 'no-store')
+    const range = parseRange(req.headers?.range, total)
+    if (range === null) {
+      res.statusCode = 416
+      res.setHeader('Content-Range', 'bytes */' + total)
+      res.end()
+      return
+    }
+    if (range !== undefined) {
+      res.statusCode = 206
+      res.setHeader('Content-Range', 'bytes ' + range.start + '-' + range.end + '/' + total)
+      res.setHeader('Content-Length', String(range.end - range.start + 1))
+      const stream = createReadStream(path, { start: range.start, end: range.end })
+      stream.on('error', () => { try { res.end() } catch { /* 已关闭 */ } })
+      stream.pipe(res as unknown as Writable)
+      return
+    }
+    res.statusCode = 200
+    res.setHeader('Content-Length', String(total))
     const stream = createReadStream(path)
+    stream.on('error', () => { try { res.end() } catch { /* 已关闭 */ } })
+    stream.pipe(res as unknown as Writable)
+  }
+
+  /** 流式返回文件的一个字节切片（用于从 scene.pkg 内提取纹理），支持 HTTP Range */
+  function serveSlice(path: string, start: number, end: number, mime: string, req: Req, res: Res): void {
+    const total = end - start + 1
+    res.setHeader('Accept-Ranges', 'bytes')
+    res.setHeader('Content-Type', mime)
+    res.setHeader('Cache-Control', 'no-store')
+    const range = parseRange(req.headers?.range, total)
+    if (range === null) {
+      res.statusCode = 416
+      res.setHeader('Content-Range', 'bytes */' + total)
+      res.end()
+      return
+    }
+    if (range !== undefined) {
+      res.statusCode = 206
+      res.setHeader('Content-Range', 'bytes ' + range.start + '-' + range.end + '/' + total)
+      res.setHeader('Content-Length', String(range.end - range.start + 1))
+      const stream = createReadStream(path, { start: start + range.start, end: start + range.end })
+      stream.on('error', () => { try { res.end() } catch { /* 已关闭 */ } })
+      stream.pipe(res as unknown as Writable)
+      return
+    }
+    res.statusCode = 200
+    res.setHeader('Content-Length', String(total))
+    const stream = createReadStream(path, { start, end })
     stream.on('error', () => { try { res.end() } catch { /* 已关闭 */ } })
     stream.pipe(res as unknown as Writable)
   }
@@ -285,11 +417,13 @@ export function apply(ctx: CordisCtx): void {
       let kind = src.kind
       let mime = src.mime
       let sourceFile = entry.file
+      let sceneImage: SceneImage | null = null
       if (kind === 'other') {
         const index = dirOf(entry.file) + '/index.html'
         if (exists(index)) { kind = 'web'; mime = 'text/html'; sourceFile = index }
       }
-      return [{ key, file: entry.file, title: meta.title, type: meta.type, kind, mime, sourceFile }]
+      if (kind === 'scene') sceneImage = scanPkgImage(entry.file)
+      return [{ key, file: entry.file, title: meta.title, type: meta.type, kind, mime, sourceFile, sceneImage }]
     })
 
     // 每台显示器分别解析预览
@@ -360,7 +494,9 @@ export function apply(ctx: CordisCtx): void {
         latestMonitor: state.latestMonitor,
         monitors: state.monitors.length > 1 ? state.monitors : [],
         wallpaper: monitor !== undefined ? { title: monitor.title, type: monitor.type } : null,
-        source: monitor !== undefined ? { kind: monitor.kind, mime: monitor.mime } : { kind: '', mime: '' },
+        source: monitor !== undefined
+          ? { kind: monitor.kind, mime: monitor.mime, scene: monitor.sceneImage !== null }
+          : { kind: '', mime: '', scene: false },
       })
     },
   }))
@@ -377,15 +513,31 @@ export function apply(ctx: CordisCtx): void {
         return
       }
       if (monitor.kind === 'video' || monitor.kind === 'image') {
-        serveFile(monitor.sourceFile, monitor.mime !== '' ? monitor.mime : 'application/octet-stream', res)
+        serveFile(monitor.sourceFile, monitor.mime !== '' ? monitor.mime : 'application/octet-stream', req, res)
         return
       }
       if (monitor.kind === 'web') {
-        serveFile(monitor.sourceFile, 'text/html; charset=utf-8', res)
+        serveFile(monitor.sourceFile, 'text/html; charset=utf-8', req, res)
         return
       }
       res.statusCode = 415
       res.end('source not renderable: ' + monitor.kind)
+    },
+  }))
+
+  disposers.push(webServer.register({
+    kind: 'exact',
+    path: '/we-sync/scene',
+    handler(req, res) {
+      const key = effectiveKey(monitorFromQuery(req))
+      const monitor = state.monitors.find((m) => m.key === key)
+      if (monitor === undefined || monitor.kind !== 'scene' || monitor.sceneImage === null) {
+        res.statusCode = 404
+        res.end('no scene image')
+        return
+      }
+      const img = monitor.sceneImage
+      serveSlice(monitor.sourceFile, img.start, img.end, img.mime, req, res)
     },
   }))
 
@@ -408,7 +560,7 @@ export function apply(ctx: CordisCtx): void {
         res.end('forbidden')
         return
       }
-      serveFile(target, mimeOfPath(target), res)
+      serveFile(target, mimeOfPath(target), req, res)
     },
   }))
 
@@ -420,7 +572,14 @@ export function apply(ctx: CordisCtx): void {
         version: state.version,
         latestMonitor: state.latestMonitor,
         monitorCount: state.monitors.length,
-        monitors: state.monitors.map((m) => ({ key: m.key, file: m.file })),
+        monitors: state.monitors.map((m) => ({
+          key: m.key,
+          file: m.file,
+          kind: m.kind,
+          sceneImage: m.sceneImage !== null
+            ? { width: m.sceneImage.width, height: m.sceneImage.height, mime: m.sceneImage.mime }
+            : null,
+        })),
         lastError: state.lastError,
         weDir: state.weDir,
       })
@@ -447,7 +606,7 @@ export function apply(ctx: CordisCtx): void {
 
   const detected = detectWeDir()
   if (detected === null) {
-    state.lastError = '未找到 Wallpaper Engine 安装目录：请在 we-sync-dsh 包源码的 CONFIG.wallpaperEngineDir 手动指定'
+    state.lastError = '未找到 Wallpaper Engine 安装目录：请在 dsh-wallpaper_share 包源码的 CONFIG.wallpaperEngineDir 手动指定'
     return
   }
   state.weDir = detected

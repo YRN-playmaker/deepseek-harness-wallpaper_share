@@ -1,8 +1,8 @@
 /**
- * we-sync · browser half
+ * dsh-wallpaper_share · browser half（内部 id / 路由前缀仍为 we-sync）
  * 玻璃面板主题覆盖 + 壁纸背景层 + wallpaper_share 会话视图标签页。
  * 与 node half 通过同源 HTTP 路由（/we-sync/state、/we-sync/preview、
- * /we-sync/random）通信，不依赖任何 RPC 基础设施。
+ * /we-sync/source、/we-sync/scene）通信，不依赖任何 RPC 基础设施。
  * 多显示器：?monitor= 锁定某台；不传则跟随"最近变化"的一台。
  */
 import { WallpaperSharePanel } from './WallpaperSharePanel.tsx'
@@ -25,8 +25,9 @@ export interface WeSyncInfo {
   latestMonitor: string
   monitors: WeSyncMonitor[]
   wallpaper: null | { title: string; type: string }
-  /** 当前生效显示器的源文件类型（'video' | 'web' | 'scene' | 'application' | 'image' | 'other' | ''） */
-  source: { kind: string; mime: string }
+  /** 当前生效显示器的源文件类型（'video' | 'web' | 'scene' | 'application' | 'image' | 'other' | ''）；
+   *  scene 表示增强模式下已从 scene.pkg 提取出可用的内嵌纹理 */
+  source: { kind: string; mime: string; scene: boolean }
 }
 
 export interface WeSyncSettings {
@@ -40,7 +41,7 @@ export interface WeSyncSettings {
   focus: boolean
   /** 当前会话是否有任务在进行（由 sessions 列表快照推导） */
   taskActive: boolean
-  /** 渲染模式：'preview' 性能（预览图）| 'source' 增强（壁纸源文件，视频/Web 可用） */
+  /** 渲染模式：'preview' 性能（预览图）| 'source' 增强（壁纸源文件） */
   renderMode: 'preview' | 'source'
 }
 
@@ -128,11 +129,11 @@ export function apply(ctx: CordisCtx): void {
   }
 
   const styleTag = document.createElement('style')
-  styleTag.dataset.plugin = 'we-sync-dsh'
+  styleTag.dataset.plugin = 'dsh-wallpaper_share'
   document.head.appendChild(styleTag)
 
   const panelStyleTag = document.createElement('style')
-  panelStyleTag.dataset.plugin = 'we-sync-dsh'
+  panelStyleTag.dataset.plugin = 'dsh-wallpaper_share'
   panelStyleTag.textContent = PANEL_CSS
   document.head.appendChild(panelStyleTag)
 
@@ -167,12 +168,20 @@ export function apply(ctx: CordisCtx): void {
     const shadowAlpha = (visuals.shadow / 100) * 0.60
     const monitorKey = info !== null && info.monitor !== '' ? info.monitor : ''
     const monitorQuery = store.settings.monitor !== '' ? '&monitor=' + encodeURIComponent(store.settings.monitor) : ''
-    const sourceKind = enabled && info !== null && store.settings.renderMode === 'source' ? info.source.kind : ''
+    const rawSourceKind = enabled && info !== null && store.settings.renderMode === 'source' ? info.source.kind : ''
+    // scene 只有在 node half 成功从 pkg 提取出纹理（info.source.scene）时才走增强，否则回退预览
+    const sourceKind = rawSourceKind === 'video' || rawSourceKind === 'web' || rawSourceKind === 'image' || (rawSourceKind === 'scene' && info !== null && info.source.scene) ? rawSourceKind : ''
 
-    // 预览图（性能模式 / 增强模式下非视频非 Web 时回退）
+    // 增强模式背景：image/scene 走专用路由；性能模式 / 提取失败回退静态预览
     let imgUrl = 'none'
-    if (enabled && info !== null && info.kind === 'image' && sourceKind === '') {
-      imgUrl = 'url("/we-sync/preview?v=' + info.version + monitorQuery + '")'
+    if (enabled && info !== null) {
+      if (sourceKind === 'image') {
+        imgUrl = 'url("/we-sync/source?monitor=' + encodeURIComponent(monitorKey) + '&v=' + info.version + '")'
+      } else if (sourceKind === 'scene') {
+        imgUrl = 'url("/we-sync/scene?monitor=' + encodeURIComponent(monitorKey) + '&v=' + info.version + '")'
+      } else if (sourceKind === '' && info.kind === 'image') {
+        imgUrl = 'url("/we-sync/preview?v=' + info.version + monitorQuery + '")'
+      }
     }
 
     styleTag.textContent =
