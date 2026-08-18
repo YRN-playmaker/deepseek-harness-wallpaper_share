@@ -300,11 +300,18 @@ export function apply(ctx: CordisCtx): void {
       }
       const props: Record<string, { value: unknown }> = {}
       for (const key of Object.keys(project?.general?.properties ?? {})) {
-        // 排除 modelresolution：应用它会触发壁纸 reloadModel()（assetManager.removeAll + 重载），
-        // 与正在进行的初始加载形成竞态，导致 Spine 壁纸卡在加载循环；其余属性应用无副作用。
-        if (key === 'modelresolution') continue
         const p = project.general?.properties?.[key]
         if (p !== undefined && 'value' in p) props[key] = { value: p.value }
+      }
+      // modelresolution 会触发 reloadModel 并决定纹理分辨率；8k(8192²/131MB) 在浏览器 WebGL 里常静默失败，
+      // 且 8k 是 realcugan 放大产物（atlas 里 size 仍是 2048，UV 不匹配）。自动选最小可用分辨率，2k 最稳。
+      if (project?.general?.properties?.modelresolution !== undefined) {
+        for (const res of ['2k', '4k', '8k']) {
+          if (exists(dir + '/assets/' + res)) {
+            props.modelresolution = { value: res }
+            break
+          }
+        }
       }
       if (Object.keys(props).length > 0) return props
     } catch { /* project.json 不可用 */ }
