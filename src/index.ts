@@ -10,6 +10,8 @@
  */
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import type { Writable } from 'node:stream'
 
 /** 最小化的 Cordis 上下文结构（独立构建不依赖 @deepseek-ai/cordis 的类型包） */
@@ -497,6 +499,7 @@ export function apply(ctx: CordisCtx): void {
         source: monitor !== undefined
           ? { kind: monitor.kind, mime: monitor.mime, scene: monitor.sceneImage !== null }
           : { kind: '', mime: '', scene: false },
+        webPort,
       })
     },
   }))
@@ -603,6 +606,41 @@ export function apply(ctx: CordisCtx): void {
       res.end(Buffer.from(preview.bytes))
     },
   }))
+
+  /** 壁纸源服务器：把当前 web 壁纸目录作为独立源伺服（127.0.0.1 临时端口）。
+   *  Spine/WebGL 类壁纸在 iframe 里需要"自己的同源"才能渲染（贴图不 tainted、
+   *  ES module / fetch / import() 全通），且与 DSH 主源（3080）隔离，无安全后门。 */
+  let sourceServer: ReturnType<typeof createServer> | null = null
+  let webPort = 0
+  try {
+    sourceServer = createServer((req, res) => {
+      const key = effectiveKey(monitorFromQuery(req))
+      const monitor = state.monitors.find((m) => m.key === key)
+      if (monitor === undefined || monitor.kind !== 'web') {
+        res.statusCode = 404
+        res.end('no web wallpaper')
+        return
+      }
+      const dir = normalize(dirOf(monitor.sourceFile))
+      const rel = (req.url ?? '').split('?')[0].replace(/^\/+/, '')
+      const target = normalize(dir + '/' + rel)
+      if (!target.startsWith(dir + '/') || target.length <= dir.length + 1) {
+        res.statusCode = 403
+        res.end('forbidden')
+        return
+      }
+      serveFile(target, mimeOfPath(target), req as unknown as Req, res as unknown as Res)
+    })
+    sourceServer.listen(0, '127.0.0.1', () => {
+      const addr = sourceServer?.address()
+      if (addr !== null && typeof addr === 'object') webPort = (addr as AddressInfo).port
+    })
+    disposers.push(() => {
+      if (sourceServer !== null) {
+        try { sourceServer.close() } catch { /* 已关闭 */ }
+      }
+    })
+  } catch { webPort = 0 }
 
   const detected = detectWeDir()
   if (detected === null) {

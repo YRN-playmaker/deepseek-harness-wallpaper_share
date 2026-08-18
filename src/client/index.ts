@@ -28,6 +28,8 @@ export interface WeSyncInfo {
   /** 当前生效显示器的源文件类型（'video' | 'web' | 'scene' | 'application' | 'image' | 'other' | ''）；
    *  scene 表示增强模式下已从 scene.pkg 提取出可用的内嵌纹理 */
   source: { kind: string; mime: string; scene: boolean }
+  /** 壁纸源服务器端口（web 壁纸 iframe 用）；0 = 不可用（回退旧代理） */
+  webPort: number
 }
 
 export interface WeSyncSettings {
@@ -215,11 +217,15 @@ export function apply(ctx: CordisCtx): void {
       let frame = mediaEl instanceof HTMLIFrameElement ? mediaEl : null
       if (frame === null) {
         frame = document.createElement('iframe')
-        frame.setAttribute('sandbox', 'allow-scripts')
+        // 壁纸源服务器提供独立同源：allow-same-origin 指壁纸自己的源（127.0.0.1:webPort），
+        // 与 DSH 主源（3080）隔离；WebGL 贴图因此不被 tainted，module/fetch/import 全通
+        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin')
         setMedia(frame)
       }
-      const src = '/we-sync/wallpaper/index.html?monitor=' + encodeURIComponent(monitorKey) + '&v=' + info.version
-      if (frame.src !== location.origin + src) frame.src = src
+      const src = typeof info.webPort === 'number' && info.webPort > 0
+        ? 'http://127.0.0.1:' + info.webPort + '/index.html?monitor=' + encodeURIComponent(monitorKey) + '&v=' + info.version
+        : location.origin + '/we-sync/wallpaper/index.html?monitor=' + encodeURIComponent(monitorKey) + '&v=' + info.version
+      if (frame.src !== src) frame.src = src
       frame.style.filter = 'blur(' + blurPx + 'px)'
     } else {
       setMedia(null)
@@ -228,6 +234,7 @@ export function apply(ctx: CordisCtx): void {
 
   let polling = false
   let lastHash = ''
+  let lastWebPort = -1
   async function poll(): Promise<void> {
     if (polling) return
     polling = true
@@ -237,9 +244,14 @@ export function apply(ctx: CordisCtx): void {
       if (!res.ok) return
       const info = await res.json() as WeSyncInfo
       const changed = typeof info.hash === 'string' && info.hash !== lastHash
+      const portChanged = typeof info.webPort === 'number' && info.webPort !== lastWebPort
       store.info = info
       store.notify()
-      if (changed) { lastHash = info.hash; applyBackground() }
+      if (changed || portChanged) {
+        lastHash = typeof info.hash === 'string' ? info.hash : lastHash
+        lastWebPort = typeof info.webPort === 'number' ? info.webPort : lastWebPort
+        applyBackground()
+      }
     } catch { /* host 尚未就绪，下轮重试 */ }
     polling = false
   }
