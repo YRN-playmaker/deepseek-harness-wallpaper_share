@@ -319,10 +319,15 @@ export function apply(ctx: CordisCtx): void {
     return { introanimation: { value: true } }
   }
 
-  /** 注入到壁纸页面里的 WE 属性 shim：等 wallpaperPropertyListener 注册后自动调用 applyUserProperties */
+  /** 注入到壁纸页面里的 WE 环境 shim：复刻 WE 默认环境（html/body 铺满黑底 + 主 canvas 全屏），
+   *  并等 wallpaperPropertyListener 注册后自动调用 applyUserProperties */
   function wallpaperShim(props: Record<string, { value: unknown }>): string {
     const json = JSON.stringify(props).replace(/</g, '\\u003c')
-    return '<script>(function(){var p=' + json + ';var f=function(){if(window.wallpaperPropertyListener&&typeof window.wallpaperPropertyListener.applyUserProperties==="function"){window.wallpaperPropertyListener.applyUserProperties(p);return true}return false};if(!f()){var n=0;var t=setInterval(function(){n++;if(f()||n>200)clearInterval(t)},50)}})();<\\/script>'
+    // 只对"没有自己定位 canvas"的壁纸（如 Spine 类）接管 canvas 为全屏；W2 这类自带 CSS 的不受影响。
+    const fit = 'var c=document.getElementById("canvas");if(c&&getComputedStyle(c).position==="static"){c.style.position="fixed";c.style.top="0";c.style.left="0";c.style.width="100%";c.style.height="100%"}'
+    const apply = 'var p=' + json + ';var f=function(){if(window.wallpaperPropertyListener&&typeof window.wallpaperPropertyListener.applyUserProperties==="function"){window.wallpaperPropertyListener.applyUserProperties(p);return true}return false};if(!f()){var n=0;var t=setInterval(function(){n++;if(f()||n>200)clearInterval(t)},50)}'
+    return '<style>html,body{width:100%;height:100%;overflow:hidden;background:#000;margin:0;padding:0}</style>'
+      + '<script>(function(){' + fit + ';' + apply + '})();<\\/script>'
   }
 
   /** 伺服 web 壁纸文件；HTML 注入 WE 属性 shim（否则 introAnimation 等属性永远 undefined，渲染被卡住） */
