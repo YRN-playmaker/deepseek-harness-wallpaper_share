@@ -1,4 +1,5 @@
 # dsh-wallpaper_share · Wallpaper Engine ↔ DeepSeek Harness 壁纸同步
+<img width="1918" height="872" alt="屏幕截图 2026-08-19 015118" src="https://github.com/user-attachments/assets/c54bf3f1-a6d9-42b5-af71-8b00b6c4a081" />
 
 
 
@@ -109,10 +110,10 @@ MIT。
 
 <a name="english"></a>
 
-<img width="1920" height="1080" alt="deepseek21" src="https://github.com/user-attachments/assets/4edaa26e-c5da-4801-b7b3-5ba04cd28184" />
+
 
 # English
-
+<img width="1920" height="1080" alt="deepseek21" src="https://github.com/user-attachments/assets/4edaa26e-c5da-4801-b7b3-5ba04cd28184" />
 Sync the wallpaper currently displayed by Wallpaper Engine onto the DeepSeek Harness Web UI as a frosted-glass page background (display-only), with a `wallpaper_share` conversation-view tab for monitor selection, transparency / blur / shadow sliders, render-mode, and focus mode.
 
 > **Display-only**: reads WE state only — never controls or changes your desktop wallpaper.
