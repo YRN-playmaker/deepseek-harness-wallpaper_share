@@ -178,17 +178,11 @@ export function apply(ctx: CordisCtx): void {
   immersiveStyleTag.dataset.plugin = 'dsh-wallpaper_share'
   document.head.appendChild(immersiveStyleTag)
 
-  const exitBtn = document.createElement('button')
-  exitBtn.type = 'button'
-  exitBtn.textContent = '退出沉浸'
-  exitBtn.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483001;display:none;padding:8px 14px;border-radius:999px;border:1px solid rgba(255,255,255,0.28);background:rgba(15,16,20,0.75);color:#e8e8e8;font-size:13px;cursor:pointer;backdrop-filter:blur(8px);'
-  document.body.appendChild(exitBtn)
-
   // 球形状态按钮：侧边栏收起时出现在左缘（搜索下方），点击切换沉浸模式，颜色随状态变化
   const orbBtn = document.createElement('button')
   orbBtn.type = 'button'
   orbBtn.title = ''
-  orbBtn.style.cssText = 'position:fixed;left:11px;top:232px;width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,0.4);cursor:pointer;z-index:2147483001;display:none;background:rgba(15,16,20,0.4);box-shadow:0 2px 8px rgba(0,0,0,0.45);transition:border-color 0.25s ease;'
+  orbBtn.style.cssText = 'position:fixed;left:11px;top:232px;width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,0.4);cursor:pointer;z-index:2147483001;opacity:0;visibility:hidden;background:rgba(15,16,20,0.4);box-shadow:0 2px 8px rgba(0,0,0,0.45);transition:opacity 0.25s ease, visibility 0.25s ease, border-color 0.25s ease;'
   document.body.appendChild(orbBtn)
 
   const STATUS_COLORS = { approval: '#eab308', running: '#3b82f6', idle: '#22c55e' }
@@ -203,9 +197,10 @@ export function apply(ctx: CordisCtx): void {
     const color = approval ? STATUS_COLORS.approval : (store.settings.taskActive ? STATUS_COLORS.running : STATUS_COLORS.idle)
     orbBtn.style.borderColor = color
     orbBtn.title = approval ? '等待授权' : (store.settings.taskActive ? '任务进行中' : '空闲')
-    // 仅在侧边栏收起时显示球形按钮
+    // 仅在侧边栏收起时显示球形按钮（opacity/visibility 过渡动画）
     const sidebarCollapsed = document.querySelector('[data-sidebar-collapsed]') !== null
-    orbBtn.style.display = sidebarCollapsed ? 'block' : 'none'
+    orbBtn.style.opacity = sidebarCollapsed ? '1' : '0'
+    orbBtn.style.visibility = sidebarCollapsed ? 'visible' : 'hidden'
   }
 
   function applyImmersive(): void {
@@ -213,7 +208,6 @@ export function apply(ctx: CordisCtx): void {
     immersiveStyleTag.textContent = on
       ? '[data-phase] > header, [data-composer-seat] { opacity: 0 !important; pointer-events: none !important; transition: opacity 0.3s ease !important; }'
       : ''
-    exitBtn.style.display = on ? 'block' : 'none'
     if (mediaEl instanceof HTMLIFrameElement) {
       // 沉浸时置顶，但不遮住侧边栏（左缘 56px rail），保留侧边栏与球形按钮可点
       mediaEl.style.zIndex = on ? '2147483000' : '-2'
@@ -222,7 +216,6 @@ export function apply(ctx: CordisCtx): void {
       mediaEl.style.width = on ? 'calc(100% - 56px)' : '100%'
     }
   }
-  exitBtn.addEventListener('click', () => { store.settings.immersive = false; applyImmersive(); store.notify() })
   orbBtn.addEventListener('click', () => {
     if (!store.settings.immersive) {
       // 进入沉浸前：若当前不是新会话页面，先切到新会话
@@ -237,6 +230,24 @@ export function apply(ctx: CordisCtx): void {
     applyImmersive()
     store.notify()
   })
+  // 侧边栏收起时，点击其中任意按钮都退出沉浸
+  function onDocClick(ev: MouseEvent): void {
+    if (!store.settings.immersive) return
+    const frame = document.querySelector('[data-sidebar-collapsed]')
+    if (frame === null) return
+    const sidebarCol = frame.firstElementChild
+    if (sidebarCol === null) return
+    const target = ev.target
+    if (target instanceof Element) {
+      const btn = target.closest('button')
+      if (btn !== null && sidebarCol.contains(btn)) {
+        store.settings.immersive = false
+        applyImmersive()
+        store.notify()
+      }
+    }
+  }
+  document.addEventListener('click', onDocClick, true)
   function onImmersiveKey(ev: KeyboardEvent): void {
     if (ev.key === 'Escape' && store.settings.immersive) { store.settings.immersive = false; applyImmersive(); store.notify() }
   }
@@ -357,10 +368,10 @@ export function apply(ctx: CordisCtx): void {
     styleTag.remove()
     panelStyleTag.remove()
     immersiveStyleTag.remove()
-    exitBtn.remove()
     orbBtn.remove()
     statusObserver.disconnect()
     document.removeEventListener('keydown', onImmersiveKey)
+    document.removeEventListener('click', onDocClick, true)
     setMedia(null)
     if (themeDisposer !== null) { themeDisposer(); themeDisposer = null }
   })
