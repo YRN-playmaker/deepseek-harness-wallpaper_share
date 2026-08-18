@@ -292,6 +292,48 @@ export function apply(ctx: CordisCtx): void {
     return 'application/octet-stream'
   }
 
+  /** 读取壁纸 project.json 的 general.properties 默认值，构造 WE applyUserProperties 入参 */
+  function buildWallpaperProps(dir: string): Record<string, { value: unknown }> {
+    try {
+      const project = JSON.parse(readText(dir + '/project.json')) as {
+        general?: { properties?: Record<string, { value?: unknown }> }
+      }
+      const props: Record<string, { value: unknown }> = {}
+      for (const key of Object.keys(project?.general?.properties ?? {})) {
+        const p = project.general?.properties?.[key]
+        if (p !== undefined && 'value' in p) props[key] = { value: p.value }
+      }
+      if (Object.keys(props).length > 0) return props
+    } catch { /* project.json 不可用 */ }
+    // 兜底：至少解锁 introAnimation，否则很多 Spine 壁纸的 load() 永远空转
+    return { introanimation: { value: true } }
+  }
+
+  /** 注入到壁纸页面里的 WE 属性 shim：等 wallpaperPropertyListener 注册后自动调用 applyUserProperties */
+  function wallpaperShim(props: Record<string, { value: unknown }>): string {
+    const json = JSON.stringify(props).replace(/</g, '\\u003c')
+    return '<script>(function(){var p=' + json + ';var f=function(){if(window.wallpaperPropertyListener&&typeof window.wallpaperPropertyListener.applyUserProperties==="function"){window.wallpaperPropertyListener.applyUserProperties(p);return true}return false};if(!f()){var n=0;var t=setInterval(function(){n++;if(f()||n>200)clearInterval(t)},50)}})();<\\/script>'
+  }
+
+  /** 伺服 web 壁纸文件；HTML 注入 WE 属性 shim（否则 introAnimation 等属性永远 undefined，渲染被卡住） */
+  function serveWebFile(dir: string, target: string, req: Req, res: Res): void {
+    const lower = target.toLowerCase()
+    if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+      try {
+        const html = readText(target)
+        const shim = wallpaperShim(buildWallpaperProps(dir))
+        const injected = html.replace(/<\/body>/i, shim + '</body>')
+        const out = injected === html ? html + shim : injected
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'text/html; charset=utf-8')
+        res.setHeader('Cache-Control', 'no-store')
+        res.end(out)
+        return
+      } catch { /* 读取失败则回退 serveFile */ }
+    }
+    serveFile(target, mimeOfPath(target), req, res)
+  }
+
   /** 解析 HTTP Range 头；返回 undefined=无 Range，null=非法范围，否则为闭区间 */
   function parseRange(header: string | undefined, total: number): { start: number; end: number } | null | undefined {
     if (typeof header !== 'string') return undefined
@@ -563,7 +605,7 @@ export function apply(ctx: CordisCtx): void {
         res.end('forbidden')
         return
       }
-      serveFile(target, mimeOfPath(target), req, res)
+      serveWebFile(dir, target, req, res)
     },
   }))
 
@@ -629,7 +671,7 @@ export function apply(ctx: CordisCtx): void {
         res.end('forbidden')
         return
       }
-      serveFile(target, mimeOfPath(target), req as unknown as Req, res as unknown as Res)
+      serveWebFile(dir, target, req as unknown as Req, res as unknown as Res)
     })
     sourceServer.listen(0, '127.0.0.1', () => {
       const addr = sourceServer?.address()
