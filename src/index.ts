@@ -300,6 +300,9 @@ export function apply(ctx: CordisCtx): void {
       }
       const props: Record<string, { value: unknown }> = {}
       for (const key of Object.keys(project?.general?.properties ?? {})) {
+        // 排除 modelresolution：应用它会触发壁纸 reloadModel()（assetManager.removeAll + 重载），
+        // 与正在进行的初始加载形成竞态，导致 Spine 壁纸卡在加载循环；其余属性应用无副作用。
+        if (key === 'modelresolution') continue
         const p = project.general?.properties?.[key]
         if (p !== undefined && 'value' in p) props[key] = { value: p.value }
       }
