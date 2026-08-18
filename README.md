@@ -1,5 +1,8 @@
 # dsh-wallpaper_share · Wallpaper Engine ↔ DeepSeek Harness 壁纸同步
 
+
+
+
 [中文](#中文) | [English](#english)
 
 把 Wallpaper Engine 当前显示的壁纸实时同步为 DeepSeek Harness Web 界面的背景（磨砂玻璃风格），并提供 `wallpaper_share` 会话视图标签页用于控制显示器来源、透明度 / 模糊 / 阴影、渲染模式与专注模式。
@@ -105,6 +108,9 @@ MIT。
 ---
 
 <a name="english"></a>
+
+<img width="1920" height="1080" alt="deepseek21" src="https://github.com/user-attachments/assets/4edaa26e-c5da-4801-b7b3-5ba04cd28184" />
+
 # English
 
 Sync the wallpaper currently displayed by Wallpaper Engine onto the DeepSeek Harness Web UI as a frosted-glass page background (display-only), with a `wallpaper_share` conversation-view tab for monitor selection, transparency / blur / shadow sliders, render-mode, and focus mode.
