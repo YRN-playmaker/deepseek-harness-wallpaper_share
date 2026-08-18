@@ -47,6 +47,8 @@ export interface WeSyncSettings {
   renderMode: 'preview' | 'source'
   /** 沉浸模式：隐藏对话 chrome（上边栏 + 输入框），并把 web 壁纸 iframe 置顶解锁鼠标交互 */
   immersive: boolean
+  /** 是否有待用户授权的请求（黄色状态信号） */
+  approvalPending: boolean
 }
 
 /** 专注模式：任务进行中 */
@@ -63,7 +65,7 @@ export function effectiveVisuals(): { panelAlpha: number; blur: number; shadow: 
 /** 包内单例 store：apply 循环更新，面板组件订阅渲染。 */
 export const store = {
   info: null as WeSyncInfo | null,
-  settings: { enabled: true, panelAlpha: 72, blur: 6, shadow: 30, monitor: '', focus: false, taskActive: false, renderMode: 'preview', immersive: false } as WeSyncSettings,
+  settings: { enabled: true, panelAlpha: 72, blur: 6, shadow: 30, monitor: '', focus: false, taskActive: false, renderMode: 'preview', immersive: false, approvalPending: false } as WeSyncSettings,
   listeners: new Set<() => void>(),
   actions: {
     applyTheme: (): void => {},
@@ -175,6 +177,30 @@ export function apply(ctx: CordisCtx): void {
   exitBtn.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483001;display:none;padding:8px 14px;border-radius:999px;border:1px solid rgba(255,255,255,0.28);background:rgba(15,16,20,0.75);color:#e8e8e8;font-size:13px;cursor:pointer;backdrop-filter:blur(8px);'
   document.body.appendChild(exitBtn)
 
+  // 球形状态按钮：侧边栏收起时出现在左缘（搜索下方），点击切换沉浸模式，颜色随状态变化
+  const orbBtn = document.createElement('button')
+  orbBtn.type = 'button'
+  orbBtn.title = ''
+  orbBtn.style.cssText = 'position:fixed;left:11px;top:176px;width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,0.32);cursor:pointer;z-index:2147483001;display:none;box-shadow:0 2px 8px rgba(0,0,0,0.45);transition:background-color 0.25s ease;'
+  document.body.appendChild(orbBtn)
+
+  const STATUS_COLORS = { approval: '#eab308', running: '#3b82f6', idle: '#22c55e' }
+
+  function syncStatus(): void {
+    // 优先级：待授权(黄) > 任务进行中(蓝) > 空闲(绿)
+    const approval = document.querySelector('[data-approval-key]') !== null
+    if (approval !== store.settings.approvalPending) {
+      store.settings.approvalPending = approval
+      store.notify()
+    }
+    const color = approval ? STATUS_COLORS.approval : (store.settings.taskActive ? STATUS_COLORS.running : STATUS_COLORS.idle)
+    orbBtn.style.backgroundColor = color
+    orbBtn.title = approval ? '等待授权' : (store.settings.taskActive ? '任务进行中' : '空闲')
+    // 仅在侧边栏收起时显示球形按钮
+    const sidebarCollapsed = document.querySelector('[data-sidebar-collapsed]') !== null
+    orbBtn.style.display = sidebarCollapsed ? 'block' : 'none'
+  }
+
   function applyImmersive(): void {
     const on = store.settings.immersive
     immersiveStyleTag.textContent = on
@@ -182,15 +208,29 @@ export function apply(ctx: CordisCtx): void {
       : ''
     exitBtn.style.display = on ? 'block' : 'none'
     if (mediaEl instanceof HTMLIFrameElement) {
+      // 沉浸时置顶，但不遮住侧边栏（左缘 56px rail），保留侧边栏与球形按钮可点
       mediaEl.style.zIndex = on ? '2147483000' : '-2'
       mediaEl.style.pointerEvents = on ? 'auto' : 'none'
+      mediaEl.style.left = on ? '56px' : '0'
+      mediaEl.style.width = on ? 'calc(100% - 56px)' : '100%'
     }
   }
   exitBtn.addEventListener('click', () => { store.settings.immersive = false; applyImmersive(); store.notify() })
+  orbBtn.addEventListener('click', () => { store.settings.immersive = !store.settings.immersive; applyImmersive(); store.notify() })
   function onImmersiveKey(ev: KeyboardEvent): void {
     if (ev.key === 'Escape' && store.settings.immersive) { store.settings.immersive = false; applyImmersive(); store.notify() }
   }
   document.addEventListener('keydown', onImmersiveKey)
+
+  // 状态同步：观察审批面板出现/消失 + 侧边栏收起状态，更新球形按钮颜色与显隐
+  syncStatus()
+  let statusRaf: number | null = null
+  const scheduleSync = (): void => {
+    if (statusRaf !== null) return
+    statusRaf = requestAnimationFrame(() => { statusRaf = null; syncStatus() })
+  }
+  const statusObserver = new MutationObserver(() => { scheduleSync() })
+  statusObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-sidebar-collapsed'] })
 
   function applyBackground(): void {
     const info = store.info
@@ -298,6 +338,8 @@ export function apply(ctx: CordisCtx): void {
     panelStyleTag.remove()
     immersiveStyleTag.remove()
     exitBtn.remove()
+    orbBtn.remove()
+    statusObserver.disconnect()
     document.removeEventListener('keydown', onImmersiveKey)
     setMedia(null)
     if (themeDisposer !== null) { themeDisposer(); themeDisposer = null }
