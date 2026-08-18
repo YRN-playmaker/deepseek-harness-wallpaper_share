@@ -45,6 +45,8 @@ export interface WeSyncSettings {
   taskActive: boolean
   /** 渲染模式：'preview' 性能（预览图）| 'source' 增强（壁纸源文件） */
   renderMode: 'preview' | 'source'
+  /** 沉浸模式：隐藏对话 chrome（上边栏 + 输入框），并把 web 壁纸 iframe 置顶解锁鼠标交互 */
+  immersive: boolean
 }
 
 /** 专注模式：任务进行中 */
@@ -61,11 +63,12 @@ export function effectiveVisuals(): { panelAlpha: number; blur: number; shadow: 
 /** 包内单例 store：apply 循环更新，面板组件订阅渲染。 */
 export const store = {
   info: null as WeSyncInfo | null,
-  settings: { enabled: true, panelAlpha: 72, blur: 6, shadow: 30, monitor: '', focus: false, taskActive: false, renderMode: 'preview' } as WeSyncSettings,
+  settings: { enabled: true, panelAlpha: 72, blur: 6, shadow: 30, monitor: '', focus: false, taskActive: false, renderMode: 'preview', immersive: false } as WeSyncSettings,
   listeners: new Set<() => void>(),
   actions: {
     applyTheme: (): void => {},
     applyBackground: (): void => {},
+    applyImmersive: (): void => {},
     repoll: (): void => {},
   },
   subscribe(fn: () => void): () => void {
@@ -161,6 +164,34 @@ export function apply(ctx: CordisCtx): void {
     }
   }
 
+  // —— 沉浸模式：隐藏对话 chrome（上边栏 + 输入框），并把 web iframe 置顶解锁鼠标 ——
+  const immersiveStyleTag = document.createElement('style')
+  immersiveStyleTag.dataset.plugin = 'dsh-wallpaper_share'
+  document.head.appendChild(immersiveStyleTag)
+
+  const exitBtn = document.createElement('button')
+  exitBtn.type = 'button'
+  exitBtn.textContent = '退出沉浸'
+  exitBtn.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483001;display:none;padding:8px 14px;border-radius:999px;border:1px solid rgba(255,255,255,0.28);background:rgba(15,16,20,0.75);color:#e8e8e8;font-size:13px;cursor:pointer;backdrop-filter:blur(8px);'
+  document.body.appendChild(exitBtn)
+
+  function applyImmersive(): void {
+    const on = store.settings.immersive
+    immersiveStyleTag.textContent = on
+      ? '[data-phase] > header, [data-composer-seat] { opacity: 0 !important; pointer-events: none !important; transition: opacity 0.3s ease !important; }'
+      : ''
+    exitBtn.style.display = on ? 'block' : 'none'
+    if (mediaEl instanceof HTMLIFrameElement) {
+      mediaEl.style.zIndex = on ? '2147483000' : '-2'
+      mediaEl.style.pointerEvents = on ? 'auto' : 'none'
+    }
+  }
+  exitBtn.addEventListener('click', () => { store.settings.immersive = false; applyImmersive(); store.notify() })
+  function onImmersiveKey(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape' && store.settings.immersive) { store.settings.immersive = false; applyImmersive(); store.notify() }
+  }
+  document.addEventListener('keydown', onImmersiveKey)
+
   function applyBackground(): void {
     const info = store.info
     const visuals = effectiveVisuals()
@@ -230,6 +261,7 @@ export function apply(ctx: CordisCtx): void {
     } else {
       setMedia(null)
     }
+    applyImmersive()
   }
 
   let polling = false
@@ -258,11 +290,15 @@ export function apply(ctx: CordisCtx): void {
 
   store.actions.applyTheme = applyTheme
   store.actions.applyBackground = applyBackground
+  store.actions.applyImmersive = applyImmersive
   store.actions.repoll = () => { lastHash = ''; void poll() }
 
   ctx.effect(() => () => {
     styleTag.remove()
     panelStyleTag.remove()
+    immersiveStyleTag.remove()
+    exitBtn.remove()
+    document.removeEventListener('keydown', onImmersiveKey)
     setMedia(null)
     if (themeDisposer !== null) { themeDisposer(); themeDisposer = null }
   })

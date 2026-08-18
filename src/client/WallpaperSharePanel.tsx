@@ -17,6 +17,7 @@ export function WallpaperSharePanel() {
   const [monitor, setMonitor] = useState(store.settings.monitor)
   const [focus, setFocus] = useState(store.settings.focus)
   const [renderMode, setRenderMode] = useState(store.settings.renderMode)
+  const [immersive, setImmersive] = useState(store.settings.immersive)
 
   useEffect(() => store.subscribe(() => {
     setInfo(store.info)
@@ -67,6 +68,15 @@ export function WallpaperSharePanel() {
     store.actions.applyTheme()
     store.actions.applyBackground()
     flash(next ? '专注模式已开启：任务中 30%/15px/90%，空闲 9%/6px/40%' : '专注模式已关闭，恢复手动滑块')
+  }
+
+  const onImmersive = (): void => {
+    const next = !store.settings.immersive
+    store.settings.immersive = next
+    setImmersive(next)
+    store.actions.applyImmersive()
+    store.notify()
+    flash(next ? '沉浸模式已开启：对话上边栏/输入框已隐藏，壁纸可交互（Esc 或右上角按钮退出）' : '已退出沉浸模式')
   }
 
   const onRenderMode = (): void => {
@@ -135,6 +145,9 @@ export function WallpaperSharePanel() {
           </button>
           <button className={['wesync-btn', renderMode === 'source' ? 'wesync-sourceOn' : 'wesync-sourceOff'].join(' ')} onClick={onRenderMode}>
             {renderMode === 'source' ? '渲染：增强（源文件）' : '渲染：性能（预览）'}
+          </button>
+          <button className={['wesync-btn', immersive ? 'wesync-focusOn' : 'wesync-focusOff'].join(' ')} onClick={onImmersive}>
+            {immersive ? '沉浸模式 · 已开启' : '开启沉浸模式'}
           </button>
         </div>
         <Slider label="面板透明度" min={0} max={100} value={focusVisuals !== null ? focusVisuals.panelAlpha : alpha} unit="%" disabled={focusVisuals !== null} onChange={onAlpha} />
