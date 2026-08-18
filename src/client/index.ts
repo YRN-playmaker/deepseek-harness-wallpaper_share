@@ -93,9 +93,13 @@ interface SlotsService {
 
 interface SessionsService {
   list: {
-    getSnapshot(): { current?: string; byId: Record<string, { running?: boolean }> } | null
+    getSnapshot(): { current?: string; byId: Record<string, { running?: boolean; blank?: boolean }> } | null
     subscribe(fn: () => void): () => void
   }
+}
+
+interface WorkspacesService {
+  startSession(workspaceId?: string): void
 }
 
 /** 最小化的 Cordis 上下文结构（独立构建不依赖 @deepseek-ai/cordis 的类型包） */
@@ -108,6 +112,9 @@ export function apply(ctx: CordisCtx): void {
   const theme = ctx.get('theme') as unknown as ThemeService | undefined
   const slots = ctx.get('slots') as unknown as SlotsService | undefined
   if (theme === undefined || slots === undefined) return
+
+  const sessions = ctx.get('sessions') as unknown as SessionsService | undefined
+  const workspaces = ctx.get('workspaces') as unknown as WorkspacesService | undefined
 
   const themeService = theme
   const slotsService = slots
@@ -181,7 +188,7 @@ export function apply(ctx: CordisCtx): void {
   const orbBtn = document.createElement('button')
   orbBtn.type = 'button'
   orbBtn.title = ''
-  orbBtn.style.cssText = 'position:fixed;left:11px;top:176px;width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,0.32);cursor:pointer;z-index:2147483001;display:none;box-shadow:0 2px 8px rgba(0,0,0,0.45);transition:background-color 0.25s ease;'
+  orbBtn.style.cssText = 'position:fixed;left:11px;top:232px;width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,0.4);cursor:pointer;z-index:2147483001;display:none;background:rgba(15,16,20,0.4);box-shadow:0 2px 8px rgba(0,0,0,0.45);transition:border-color 0.25s ease;'
   document.body.appendChild(orbBtn)
 
   const STATUS_COLORS = { approval: '#eab308', running: '#3b82f6', idle: '#22c55e' }
@@ -194,7 +201,7 @@ export function apply(ctx: CordisCtx): void {
       store.notify()
     }
     const color = approval ? STATUS_COLORS.approval : (store.settings.taskActive ? STATUS_COLORS.running : STATUS_COLORS.idle)
-    orbBtn.style.backgroundColor = color
+    orbBtn.style.borderColor = color
     orbBtn.title = approval ? '等待授权' : (store.settings.taskActive ? '任务进行中' : '空闲')
     // 仅在侧边栏收起时显示球形按钮
     const sidebarCollapsed = document.querySelector('[data-sidebar-collapsed]') !== null
@@ -216,7 +223,20 @@ export function apply(ctx: CordisCtx): void {
     }
   }
   exitBtn.addEventListener('click', () => { store.settings.immersive = false; applyImmersive(); store.notify() })
-  orbBtn.addEventListener('click', () => { store.settings.immersive = !store.settings.immersive; applyImmersive(); store.notify() })
+  orbBtn.addEventListener('click', () => {
+    if (!store.settings.immersive) {
+      // 进入沉浸前：若当前不是新会话页面，先切到新会话
+      const snap = sessions?.list.getSnapshot()
+      const id = snap?.current
+      const isBlank = id === undefined || (snap != null && snap.byId[id]?.blank === true)
+      if (!isBlank && typeof workspaces?.startSession === 'function') {
+        workspaces.startSession()
+      }
+    }
+    store.settings.immersive = !store.settings.immersive
+    applyImmersive()
+    store.notify()
+  })
   function onImmersiveKey(ev: KeyboardEvent): void {
     if (ev.key === 'Escape' && store.settings.immersive) { store.settings.immersive = false; applyImmersive(); store.notify() }
   }
@@ -352,7 +372,6 @@ export function apply(ctx: CordisCtx): void {
   })
 
   // 任务状态检测：订阅 sessions 列表快照，当前会话 running = 任务进行中
-  const sessions = ctx.get('sessions') as unknown as SessionsService | undefined
   if (sessions !== undefined) {
     const updateTaskState = (): void => {
       const snapshot = sessions.list.getSnapshot()
