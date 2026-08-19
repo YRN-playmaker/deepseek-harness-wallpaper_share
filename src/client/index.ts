@@ -182,7 +182,7 @@ export function apply(ctx: CordisCtx): void {
   const orbBtn = document.createElement('button')
   orbBtn.type = 'button'
   orbBtn.title = ''
-  orbBtn.style.cssText = 'position:fixed;left:11px;top:232px;width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,0.4);cursor:pointer;z-index:2147483001;opacity:0;visibility:hidden;background:rgba(15,16,20,0.4);box-shadow:0 2px 8px rgba(0,0,0,0.45);transition:opacity 0.25s ease, visibility 0.25s ease, border-color 0.25s ease;'
+  orbBtn.style.cssText = 'position:fixed;left:11px;top:232px;width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,0.4);cursor:pointer;z-index:2147483001;opacity:0;visibility:hidden;background:rgba(15,16,20,0.4);box-shadow:0 2px 8px rgba(0,0,0,0.45);outline:none;transition:opacity 0.25s ease, visibility 0.25s ease, border-color 0.25s ease;'
   document.body.appendChild(orbBtn)
 
   const STATUS_COLORS = { approval: '#eab308', running: '#3b82f6', idle: '#22c55e' }
@@ -382,15 +382,15 @@ export function apply(ctx: CordisCtx): void {
     return () => clearInterval(timer)
   })
 
-  // 任务状态检测：订阅 sessions 列表快照，当前会话 running = 任务进行中
+  // 任务状态检测：订阅 sessions 列表快照，任意会话（跨工作区）running = 任务进行中
   if (sessions !== undefined) {
     const updateTaskState = (): void => {
       const snapshot = sessions.list.getSnapshot()
-      const id = snapshot?.current
-      const active = id !== undefined && snapshot !== null && snapshot.byId[id]?.running === true
+      const active = snapshot != null && Object.values(snapshot.byId).some((s) => s.running === true)
       if (active !== store.settings.taskActive) {
         store.settings.taskActive = active
         if (store.settings.focus) { applyTheme(); applyBackground() }
+        syncStatus()
         store.notify()
       }
     }
