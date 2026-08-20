@@ -104,7 +104,7 @@ dsh plugin --profile web add ./dsh-wallpaper_share-0.2.0.tgz
 
 ## 许可证
 
-MIT。
+gplv3
 
 ---
 
@@ -207,4 +207,5 @@ dsh plugin --profile web add ./dsh-wallpaper_share-0.2.0.tgz
 
 ## License
 
+gplv3
 MIT.
