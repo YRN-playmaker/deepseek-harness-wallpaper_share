@@ -207,5 +207,4 @@ dsh plugin --profile web add ./dsh-wallpaper_share-0.2.0.tgz
 
 ## License
 
-gplv3
-MIT.
+gplv3.
