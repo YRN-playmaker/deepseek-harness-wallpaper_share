@@ -22,9 +22,10 @@
 - **多显示器**：自动跟随"最近变化"的一台；复数显示器时可手动锁定某台作为背景来源
 - **视觉效果滑块（即时生效）**：面板透明度 0–100% / 背景模糊 0–30px / 阴影深度 0–100%
 - **渲染模式切换**：性能（静态预览图，默认）⇄ 增强（加载壁纸源内容）
+- **Scene 实时渲染（新增）**：scene 壁纸增强模式默认走**浏览器子集渲染器**（真实 `scene.json` 图层树 + transform 合成进 canvas）；显式配置 `sceneRendererPath` 后走独立 renderer 子进程（offscreen，不弹窗）→ WebSocket 帧流；renderer 不可用 / 崩溃时自动回退 pkg 纹理 → 预览
 - **专注模式 🎯**：任务进行中自动切换为 30% / 15px / 90%，任务完成后自动切换为 9% / 6px / 40%
 - **同步开关** ⏻ 一键启停
-- 自诊断路由 `/we-sync/diag`（仅本机可访问，含 scene 纹理提取结果）
+- 自诊断路由 `/we-sync/diag`（仅本机可访问，含 scene renderer 状态与纹理提取结果）
 
 ### 增强模式兼容矩阵
 
@@ -33,10 +34,13 @@
 | `video` | 播放源视频（支持 HTTP Range，可正常 seek） |
 | `web` | iframe 加载源页面 |
 | `image` | 显示源图 |
-| `scene` | 从 `scene.pkg` 提取内嵌背景纹理的高清 mipmap 显示（提取失败才回退预览） |
+| `scene` | **浏览器子集渲染器**（默认）：真实图层树 + transform 合成进 canvas（未解码的 TEX 纹理以占位块标注）；或**外部 renderer**（`sceneRendererPath` + WS 帧流）；renderer 不可用/失败 → 提取 pkg 内嵌高清纹理 → 预览 |
 | `application` / `other` | 回退静态预览 |
 
-> 说明：scene 壁纸的真实画面由 Wallpaper Engine 引擎（shader / 粒子 / 纹理）实时渲染，浏览器无法执行该管线。增强模式提取的是 pkg 内嵌的背景纹理，属于近似背景，与 WE 内看到的完整动态效果并不等同。
+> **scene 增强的完整 fallback 链**：`真实 Scene Renderer → 浏览器子集渲染器 → 提取的 pkg 纹理 → preview 预览 → 通用纯色背景`。
+> **渲染模式**：`sceneRenderMode: 'auto'`（默认）= 浏览器子集渲染器为主，仅当显式配置 `sceneRendererPath` 才走外部 renderer；`'browser'` 强制浏览器渲染；`'external'` 强制外部 renderer（未配置时用内置参考 renderer 诊断动画）。
+> **Phase 2a 纹理（已完成）**：`.tex` 容器格式已实测破解——多数纹理的像素数据是**完整全分辨率 PNG/JPEG**（含 mip 链）；raw 纹理为 **LZ4 压缩 + DXT1/3/5/RGBA8888**（每级 mip 带 [W][H][LZ4][解压尺寸][压缩尺寸] 头）。浏览器 renderer 贴出真实图层贴图（Persona/背景/Rebecca 全部纹理）。格式细节见 `docs/tex-format-findings.md`。
+> **Phase C 粒子（进行中）**：粒子系统已接入——解析 WE `particles/*.json` 预设（发射器/初始化器/算子/渲染器/材质，含 instanceoverride 覆盖），浏览器 Canvas2D 每帧更新并 additive 混合绘制（Fog/Ember 已动起来）；shader effect / SceneScript（Clock 文字）/ keyframe 动画为后续。
 
 ## 安装（官方 `dsh plugin` 通道，零手工配置）
 
@@ -78,16 +82,25 @@ dsh plugin --profile web add ./dsh-wallpaper_share-0.2.0.tgz
 | `workshopContentDir` | `''`（自动推导） | 工作坊内容目录 |
 | `pollIntervalMs` | `2000` | 轮询间隔 |
 | `previewMaxBytes` | `6291456` | 预览图大小上限 |
+| `sceneRendererPath` | `''`（内置参考 renderer） | 外部 scene renderer 可执行文件；留空用内置参考 renderer（诊断动画） |
+| `wallpaperEngineAssetsDir` | `''`（自动推导） | WE engine assets 目录（自动为 `<weDir>/assets`；缺失时 renderer 不可用） |
+| `sceneRenderWidth` | `1920` | scene renderer 输出宽度 |
+| `sceneRenderHeight` | `1080` | scene renderer 输出高度 |
+| `sceneRenderFps` | `30` | scene renderer 目标帧率 |
+| `sceneRenderQuality` | `80` | JPEG/WebP 帧质量（0..100） |
+| `sceneRenderMode` | `'auto'` | `'auto'`（浏览器子集渲染器为主；配置了 `sceneRendererPath` 则 external）\| `'browser'` \| `'external'` |
 
 ## 排查
 
-- `http://127.0.0.1:3080/we-sync/diag`：内部状态（`kind` / `fingerprint` / `weDir` / `lastError` / 每台显示器的 `sceneImage` 提取结果）；
+- `http://127.0.0.1:3080/we-sync/diag`：内部状态（`kind` / `fingerprint` / `weDir` / `lastError` / 每台显示器的 `sceneImage` 提取结果 / **scene renderer 的 capabilities / status / fallback 层**）；
 - `lastError` 提示未找到安装目录 → 在包源码 `CONFIG.wallpaperEngineDir` 手动指定后重新构建 / 重新安装；
+- scene 增强无动态画面 → 看 `scene.available`：`false` 表示 renderer 缺失或 assets 目录缺失（`/we-sync/diag` 里有 `reason`）；
 - 页面没变化 → 刷新页面，确认标签栏出现 `wallpaper_share`。
 
 ## 已知限制
 
-- scene 壁纸增强模式显示的是 pkg 内嵌纹理（近似背景），非 WE 引擎渲染的完整动态效果；
+- scene 增强的"真实动态画面"取决于渲染模式：默认浏览器子集渲染器只做**静态图层合成**（图层树 + transform 正确，TEX 纹理待 Phase 2 解码，无动画/shader/粒子）；外部 renderer（`sceneRendererPath`）可提供真实渲染，但需用户自备（如 WSL2 封装的 linux-wallpaperengine 离屏封装，GPL，独立组件）；
+- 参考 renderer 为 1920×1080 RGBA 全帧传输，CPU 占用偏高（本机实测 ~24-27fps @960×540）；真 renderer 建议输出 JPEG/WebP 以降低带宽；
 - 多显示器时取 `lastselectedmonitor`（无则第一台）；
 - 视觉参数仅保存在页面内存，刷新回到默认值（72% / 6px / 30%）。
 
@@ -95,8 +108,10 @@ dsh plugin --profile web add ./dsh-wallpaper_share-0.2.0.tgz
 
 - `package.json` — 包清单：`dsh.bundle.patch` → `cordis.patch.yml`，`dsh.client` → 浏览器半，`exports["./client"]` → 预构建 `lib/client.js`
 - `cordis.patch.yml` — bundle 补丁层（host 行 + dsh.client roster 行）
-- `src/index.ts` — node 半源码（轮询 / HTTP 路由 / scene 纹理提取 / HTTP Range）
-- `src/client/` — 浏览器半源码（主题覆盖 / 背景层 / wallpaper_share 面板）
+- `src/index.ts` — node 半源码（轮询 / HTTP 路由 / scene 纹理提取 / HTTP Range / SceneAdapter 接入 / SceneModel 路由 / WebSocket 帧流）
+- `src/scene/` — SceneAdapter 模块（协议 / 能力探测 / renderer 进程 / WebSocket / fallback / **PKGV0001 解析 / SceneModel 图层模型**）
+- `src/client/` — 浏览器半源码（主题覆盖 / 背景层 / SceneCanvas / **SceneModelRenderer 子集渲染器** / wallpaper_share 面板）
+- `tools/scene-renderer/` — 内置参考 renderer（协议契约实现；真 renderer 按同协议替换）
 - `lib/` — 预构建产物（用户零构建；GitHub 安装也无需构建许可）
 - `dsh-wallpaper_share-0.2.0.tgz` — 发布 tarball（GitHub Release 附件）
 - `install.ps1` — 可选的一键安装脚本（走官方 `dsh plugin add` 通道）
