@@ -1,7 +1,7 @@
 # dsh-wallpaper_share · Wallpaper Engine ↔ DeepSeek Harness 壁纸同步
-<img width="1918" height="872" alt="屏幕截图 2026-08-19 015118" src="https://github.com/user-attachments/assets/c54bf3f1-a6d9-42b5-af71-8b00b6c4a081" />
 
-<img width="426" height="240" alt="Video Project 28" src="https://github.com/user-attachments/assets/3aa5dac6-7d29-4275-aedd-864a9114a43f" />
+
+https://github.com/user-attachments/assets/4461d385-de62-42be-8420-7edce5606f44
 
 
 
